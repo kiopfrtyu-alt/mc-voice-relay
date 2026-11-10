@@ -1,0 +1,250 @@
+<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Minecraft Voice (ต้นแบบ)</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1e;--mut:#6b6b70;--line:#d4d4d8;--ok:#16a34a;--bad:#dc2626;--acc:#2563eb;--card:#f4f4f5}
+@media(prefers-color-scheme:dark){:root{--bg:#161618;--fg:#f2f2f3;--mut:#9a9aa0;--line:#3a3a3f;--card:#232326;--acc:#60a5fa;--ok:#4ade80;--bad:#f87171}}
+*{box-sizing:border-box}
+body{font-family:system-ui,sans-serif;max-width:440px;margin:auto;padding:16px;background:var(--bg);color:var(--fg)}
+h3{margin:.2em 0 .6em}
+input,button,select{font:inherit;padding:10px;width:100%;margin:4px 0;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+input[type=range]{padding:0;margin:6px 0;accent-color:var(--acc)}
+button{cursor:pointer;font-weight:600}
+button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.sec{background:var(--card);border-radius:12px;padding:12px;margin:12px 0}
+.sec.plain{background:none;padding:0}
+#st{min-height:1.4em;margin:8px 0;font-size:.95em}
+#st.err{color:var(--bad)}
+.hide{display:none!important}
+#mic.off{background:var(--bad);color:#fff;border-color:var(--bad)}
+#mic.on{background:var(--ok);color:#06280f;border-color:var(--ok)}
+#ptt{height:84px;font-size:1.15em;touch-action:none;user-select:none;-webkit-user-select:none}
+#ptt.down{background:var(--ok);color:#06280f;border-color:var(--ok)}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:6px 0}
+.bar>i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.lab{font-size:.9em;color:var(--mut)}
+ul{list-style:none;padding:0;margin:0}
+li{padding:8px 0;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+li .nm{font-weight:600}
+li .nm::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--line);margin-right:8px}
+li.talk .nm::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+li .s{font-size:.85em;color:var(--mut)}
+small{color:var(--mut)}
+</style></head><body>
+<h3>เสียงตามระยะ Minecraft (ต้นแบบ)</h3>
+
+<div id="join">
+  <input id="room" placeholder="รหัสห้อง" autocomplete="off" autocapitalize="off">
+  <input id="name" placeholder="ชื่อ Xbox (ตรงตัวพิมพ์)" autocomplete="off" autocapitalize="off">
+  <input id="code" placeholder="รหัส 6 หลักจากแชตในเกม" inputmode="numeric" maxlength="6" autocomplete="off">
+  <button id="go" class="primary">เข้าห้อง</button>
+  <small>รหัสจะขึ้นในแชตเกมตอนคุณเข้าโลก พิมพ์ /scriptevent voice:code เพื่อดูอีกครั้ง ควรใส่หูฟังเพื่อไม่ให้เสียงสะท้อน</small>
+</div>
+
+<p id="st"></p>
+
+<div id="ctl" class="hide">
+  <div class="sec">
+    <button id="mic" class="on">🎤 ไมค์: เปิด (กดเพื่อปิด)</button>
+    <select id="mode"><option value="open">โหมดไมค์: เปิดตลอด</option><option value="ptt">โหมดไมค์: กดค้างเพื่อพูด</option></select>
+    <button id="ptt" class="hide">กดค้างเพื่อพูด (คีย์บอร์ด: Space)</button>
+    <div class="bar"><i id="lvl"></i></div>
+    <div class="lab">ระดับเสียงไมค์ของคุณ (ถ้าไม่ขยับ แปลว่าไมค์ปิดหรือไม่ได้ยินคุณ)</div>
+  </div>
+  <div class="sec">
+    <div class="row"><span>ระยะที่ได้ยิน</span><b id="rl">32 บล็อก</b></div>
+    <input id="range" type="range" min="8" max="64" step="1" value="32">
+    <div class="lab">ใครย่อตัว (sneak) อยู่จะเป็นเสียงกระซิบ ได้ยินแค่ราว 30% ของระยะ</div>
+  </div>
+  <div class="sec"><ul id="ls"></ul><div id="empty" class="lab">ยังไม่มีผู้เล่นคนอื่นในห้องเสียง</div></div>
+  <button id="leave">ออกจากห้อง</button>
+  <p id="note" class="lab"></p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const ICE={iceServers:[{urls:"stun:stun.l.google.com:19302"}]};
+const WHISPER=0.3;
+let ac,ws,mic,me="",roomId="",codeVal="",state={},peers={},rows={},chain=Promise.resolve();
+let RANGE=32,muted=false,mode="open",pttDown=false,joined=false,want=false,wake=null,hiddenAt=0,localAn=null;
+
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+$("room").value=new URLSearchParams(location.search).get("room")||store.get("room")||"";
+$("name").value=store.get("name")||"";
+RANGE=+store.get("range")||32;$("range").value=RANGE;$("rl").textContent=RANGE+" บล็อก";
+
+const status=(t,err)=>{$("st").textContent=t;$("st").className=err?"err":""};
+const tx=(to,data)=>ws&&ws.readyState===1&&ws.send(JSON.stringify({t:"signal",to,data}));
+const ramp=(p,v)=>p.linearRampToValueAtTime(v,ac.currentTime+.25);
+const rms=an=>{const b=new Uint8Array(an.fftSize);an.getByteTimeDomainData(b);let s=0;for(const v of b){const x=(v-128)/128;s+=x*x}return Math.sqrt(s/b.length)};
+
+function impulse(){const n=ac.sampleRate*1.8,b=ac.createBuffer(2,n,ac.sampleRate);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3)}return b}
+
+/* ---------- ไมค์ ---------- */
+const getMic=()=>navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+function hookMic(){
+  const t=mic.getAudioTracks()[0];
+  if(t)t.onended=()=>{$("note").textContent="ไมค์ถูกระบบตัด (เช่นสลับแอป) กดปุ่มไมค์เพื่อเปิดใหม่"};
+  if(localAn)try{localAn.disconnect()}catch(e){}
+  const s=ac.createMediaStreamSource(mic);localAn=ac.createAnalyser();localAn.fftSize=512;s.connect(localAn);
+}
+function applyMic(){
+  const on=!muted&&(mode!=="ptt"||pttDown);
+  if(mic)mic.getAudioTracks().forEach(t=>t.enabled=on);
+  const b=$("mic");
+  b.className=muted?"off":"on";
+  b.textContent=muted?"🔇 ไมค์: ปิด (กดเพื่อเปิด)":(mode==="ptt"?"🎤 ไมค์พร้อม (กดเพื่อปิดทั้งหมด)":"🎤 ไมค์: เปิด (กดเพื่อปิด)");
+  $("ptt").classList.toggle("down",pttDown&&!muted);
+}
+async function reacquire(){
+  try{
+    const s=await getMic(),nt=s.getAudioTracks()[0];
+    for(const p of Object.values(peers))p.pc.getSenders().forEach(x=>{if(x.track&&x.track.kind==="audio")x.replaceTrack(nt)});
+    mic.getTracks().forEach(t=>t.stop());mic=s;hookMic();applyMic();$("note").textContent="";
+  }catch(e){$("note").textContent="เปิดไมค์ใหม่ไม่ได้ ตรวจสิทธิ์ไมค์ของเบราว์เซอร์"}
+}
+const micDead=()=>mic&&mic.getAudioTracks().every(t=>t.readyState==="ended");
+$("mic").onclick=()=>{if(micDead())return reacquire();muted=!muted;applyMic()};
+$("mode").onchange=()=>{mode=$("mode").value;pttDown=false;$("ptt").classList.toggle("hide",mode!=="ptt");applyMic()};
+const ptt=v=>{if(mode==="ptt"&&pttDown!==v){pttDown=v;applyMic()}};
+const pb=$("ptt");
+pb.addEventListener("pointerdown",e=>{e.preventDefault();try{pb.setPointerCapture(e.pointerId)}catch(_){}ptt(true)});
+["pointerup","pointercancel","lostpointercapture"].forEach(ev=>pb.addEventListener(ev,()=>ptt(false)));
+pb.addEventListener("contextmenu",e=>e.preventDefault());
+addEventListener("keydown",e=>{if(e.code==="Space"&&mode==="ptt"&&!e.repeat&&!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)){e.preventDefault();ptt(true)}});
+addEventListener("keyup",e=>{if(e.code==="Space")ptt(false)});
+addEventListener("blur",()=>ptt(false));
+$("range").oninput=e=>{RANGE=+e.target.value;$("rl").textContent=RANGE+" บล็อก";store.set("range",RANGE)};
+
+/* ---------- เสียงของเพื่อน ---------- */
+function build(n,p,stream){
+  const a=new Audio();a.srcObject=stream;a.muted=true;a.play().catch(()=>{}); // ต้องมี element รับสตรีมไว้ Chrome ถึงจะส่งเสียงเข้า Web Audio
+  const src=ac.createMediaStreamSource(stream),lp=ac.createBiquadFilter(),vol=ac.createGain(),pan=ac.createPanner(),
+    dry=ac.createGain(),wet=ac.createGain(),rv=ac.createConvolver(),an=ac.createAnalyser();
+  an.fftSize=512;
+  lp.type="lowpass";lp.frequency.value=20000;
+  pan.panningModel="HRTF";pan.distanceModel="linear";pan.refDistance=1;pan.maxDistance=RANGE;pan.rolloffFactor=1;
+  rv.buffer=impulse();wet.gain.value=0;dry.gain.value=0;
+  src.connect(an);src.connect(lp);lp.connect(vol);vol.connect(pan);pan.connect(dry);pan.connect(rv);rv.connect(wet);dry.connect(ac.destination);wet.connect(ac.destination);
+  Object.assign(p,{lp,vol,pan,dry,wet,an,audio:a});
+  const li=document.createElement("li");
+  li.innerHTML='<div class="row"><span class="nm"></span><span class="s"></span></div><input type="range" min="0" max="200" value="100" title="ระดับเสียงของคนนี้">';
+  li.querySelector(".nm").textContent=n;
+  li.querySelector("input").oninput=e=>{vol.gain.value=e.target.value/100};
+  $("ls").appendChild(li);rows[n]=li;$("empty").classList.add("hide");
+}
+function connect(n,init){
+  if(peers[n])return peers[n];
+  const pc=new RTCPeerConnection(ICE),p={pc,q:[],state:"new"};peers[n]=p;
+  mic.getTracks().forEach(t=>pc.addTrack(t,mic));
+  pc.onicecandidate=e=>e.candidate&&tx(n,{c:e.candidate});
+  pc.ontrack=e=>{if(!p.pan)build(n,p,e.streams[0])};
+  pc.onconnectionstatechange=()=>{p.state=pc.connectionState};
+  if(init)pc.onnegotiationneeded=async()=>{await pc.setLocalDescription(await pc.createOffer());tx(n,{d:pc.localDescription})};
+  return p;
+}
+async function onSignal(from,s){
+  if(s.d&&s.d.type==="offer"&&peers[from])drop(from); // อีกฝั่งเข้าใหม่ ใช้การเชื่อมต่อเก่าไม่ได้
+  const p=connect(from,false),pc=p.pc;
+  if(s.d){
+    await pc.setRemoteDescription(s.d);
+    while(p.q.length){try{await pc.addIceCandidate(p.q.shift())}catch(e){}}
+    if(s.d.type==="offer"){await pc.setLocalDescription(await pc.createAnswer());tx(from,{d:pc.localDescription})}
+  }else if(s.c){
+    if(pc.remoteDescription){try{await pc.addIceCandidate(s.c)}catch(e){}}else p.q.push(s.c); // เก็บไว้ก่อน ยังไม่ได้รับ description
+  }
+}
+function drop(n){
+  const p=peers[n];if(!p)return;
+  try{p.pc.close()}catch(e){}
+  if(p.audio){p.audio.srcObject=null}
+  delete peers[n];
+  if(rows[n]){rows[n].remove();delete rows[n]}
+  $("empty").classList.toggle("hide",!!$("ls").children.length);
+}
+const dropAll=()=>Object.keys(peers).forEach(drop);
+
+/* ---------- อัปเดตตามตำแหน่งในเกม ---------- */
+function update(){
+  const P=state.players||{},m=P[me];
+  if(!joined)return;
+  status(!state.fresh?"เกมยังไม่ส่งข้อมูลมา":m?"เชื่อมกับเกมแล้ว ("+me+")":"ไม่พบชื่อนี้ในเกมตอนนี้",!state.fresh||!m);
+  if(m){const L=ac.listener;ramp(L.positionX,m.x);ramp(L.positionY,m.y+1.6);ramp(L.positionZ,m.z);ramp(L.forwardX,m.dx);ramp(L.forwardY,m.dy);ramp(L.forwardZ,m.dz);L.upX.value=0;L.upY.value=1;L.upZ.value=0}
+  for(const n in peers){
+    const p=peers[n],o=P[n],li=rows[n];if(!p.pan||!li)continue;
+    const s=li.querySelector(".s");
+    const off=!m||!o||m.dim!==o.dim;
+    if(off){ramp(p.dry.gain,0);ramp(p.wet.gain,0);s.textContent=!o?"ไม่อยู่ในเกม":"คนละมิติ";continue}
+    const eff=RANGE*(o.sneak?WHISPER:1),d=Math.hypot(m.x-o.x,m.y-o.y,m.z-o.z);
+    p.pan.maxDistance=Math.max(eff,2);
+    ramp(p.pan.positionX,o.x);ramp(p.pan.positionY,o.y+1.6);ramp(p.pan.positionZ,o.z);
+    ramp(p.dry.gain,1);
+    ramp(p.lp.frequency,(m.water||o.water)?500:20000);
+    ramp(p.wet.gain,(m.covered&&o.covered)?0.5:0);
+    let t=d.toFixed(0)+" บล็อก";
+    if(d>=eff)t="ไกลเกินไป ("+t+")";
+    if(o.sneak)t+=" · กระซิบ";
+    if(m.water||o.water)t+=" · ใต้น้ำ";
+    if(m.covered&&o.covered)t+=" · ในถ้ำ";
+    if(p.state==="failed")t="เชื่อมต่อเสียงไม่ได้ (เครือข่ายอาจต้องใช้ TURN)";
+    s.textContent=t;
+  }
+}
+setInterval(()=>{
+  if(!joined)return;
+  if(localAn)$("lvl").style.width=Math.min(100,rms(localAn)*400)+"%";
+  for(const n in peers){const p=peers[n],li=rows[n];if(p.an&&li)li.classList.toggle("talk",rms(p.an)>0.02)}
+},120);
+
+/* ---------- การเชื่อมต่อ ---------- */
+let lastErr="";
+function connectWS(){
+  dropAll();lastErr="";
+  const q="?room="+encodeURIComponent(roomId)+"&name="+encodeURIComponent(me)+"&code="+encodeURIComponent(codeVal);
+  ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/"+q);
+  const mine=ws;
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.t==="peers"){
+      joined=true;$("join").classList.add("hide");$("ctl").classList.remove("hide");
+      d.peers.forEach(n=>connect(n,true));
+    }else if(d.t==="signal")chain=chain.then(()=>onSignal(d.from,d.data)).catch(()=>{});
+    else if(d.t==="leave")drop(d.name);
+    else if(d.t==="state"){state=d;update()}
+    else if(d.t==="error")lastErr=d.why;
+  };
+  ws.onclose=e=>{
+    if(mine!==ws)return;
+    if(e.code>=4000){fatal(lastErr||"เข้าห้องไม่ได้ (รหัส "+e.code+")")}
+    else if(want){status("หลุดการเชื่อมต่อ กำลังต่อใหม่...",true);setTimeout(()=>want&&connectWS(),2000)}
+  };
+}
+function fatal(msg){
+  want=false;joined=false;dropAll();
+  $("ctl").classList.add("hide");$("join").classList.remove("hide");$("go").disabled=false;
+  status(msg,true);
+}
+async function wl(){try{if(navigator.wakeLock&&!wake)wake=await navigator.wakeLock.request("screen");if(wake)wake.onrelease=()=>{wake=null}}catch(e){}}
+
+$("go").onclick=async()=>{
+  me=$("name").value.trim();roomId=$("room").value.trim();codeVal=$("code").value.trim();
+  if(!me||!roomId||!codeVal){status("กรอกรหัสห้อง ชื่อ และรหัส 6 หลักให้ครบ",true);return}
+  store.set("room",roomId);store.set("name",me);
+  $("go").disabled=true;status("กำลังเชื่อมต่อ...");
+  try{
+    if(!mic){mic=await getMic()}
+  }catch(e){fatal("ต้องอนุญาตไมค์ และเปิดผ่าน https");return}
+  if(!ac)ac=new AudioContext();
+  await ac.resume();hookMic();applyMic();wl();want=true;connectWS();
+};
+$("leave").onclick=()=>{want=false;try{ws.close()}catch(e){}fatal("ออกจากห้องแล้ว")};
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){hiddenAt=Date.now();return}
+  if(!ac)return;
+  ac.resume();wl();
+  if(micDead())reacquire();
+  if(hiddenAt&&Date.now()-hiddenAt>3000){$("note").textContent="หน้าเว็บถูกพักไว้ช่วงหนึ่ง เสียงอาจขาดตอน ถ้าเล่นเกมบนเครื่องเดียวกัน ให้ลองหน้าต่างลอย/แบ่งจอ";setTimeout(()=>{if(!micDead())$("note").textContent=""},8000)}
+});
+</script></body></html>
