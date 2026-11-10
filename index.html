@@ -228,16 +228,28 @@ function fatal(msg){
 }
 async function wl(){try{if(navigator.wakeLock&&!wake)wake=await navigator.wakeLock.request("screen");if(wake)wake.onrelease=()=>{wake=null}}catch(e){}}
 
+const tmo=(pr,ms)=>Promise.race([pr,new Promise((_,r)=>setTimeout(()=>r(new Error("timeout")),ms))]);
+/* เตรียมไมค์+ระบบเสียงล่วงหน้า (เรียกตอนโหลดหน้า / แตะครั้งแรก / ตอนกดเข้าห้อง) เพื่อให้เข้าห้องจากแถบแจ้งเตือนได้โดยไม่ต้องกลับมาแตะ */
+async function prep(){
+  try{if(!ac)ac=new AudioContext()}catch(e){}
+  try{if(ac&&ac.state!=="running")await tmo(ac.resume(),2500)}catch(e){}
+  try{if(!mic||mic.getAudioTracks().every(t=>t.readyState==="ended"))mic=await tmo(getMic(),8000)}catch(e){}
+}
+window.mcPrep=prep;
+["pointerdown","touchstart","keydown"].forEach(ev=>document.addEventListener(ev,()=>{if(!ac||ac.state!=="running"||!mic)prep()},{passive:true}));
+setTimeout(prep,300);
 $("go").onclick=async()=>{
   me=$("name").value.trim();roomId=$("room").value.trim();codeVal=$("code").value.trim();
   if(!me||!roomId||!codeVal){status("กรอกรหัสห้อง ชื่อ และรหัส 6 หลักให้ครบ",true);return}
   store.set("room",roomId);store.set("name",me);
-  $("go").disabled=true;status("กำลังเชื่อมต่อ...");
-  try{
-    if(!mic){mic=await getMic()}
-  }catch(e){fatal("ต้องอนุญาตไมค์ และเปิดผ่าน https");return}
-  if(!ac)ac=new AudioContext();
-  await ac.resume();hookMic();applyMic();wl();want=true;connectWS();
+  $("go").disabled=true;status("กำลังเปิดไมค์...");
+  await prep();
+  if(!mic){fatal("เปิดไมค์ไม่ได้ ต้องอนุญาตไมค์ และเปิดผ่าน https (ถ้าอยู่ในเกม ให้แตะแจ้งเตือนเข้าแอปแล้วกดเข้าห้องอีกครั้ง)");return}
+  if(!ac){fatal("เปิดระบบเสียงไม่ได้");return}
+  status("กำลังเชื่อมต่อห้อง...");
+  hookMic();applyMic();wl();want=true;connectWS();
+  /* ถ้าระบบเสียงยังค้าง (ยังไม่มีการแตะ) จะปลุกใหม่ทุก 1 วินาที และตอนแตะ/กลับมาที่หน้า */
+  const kick=setInterval(()=>{if(ac.state==="running"){clearInterval(kick)}else{try{ac.resume()}catch(e){}}},1000);
 };
 $("leave").onclick=()=>{want=false;try{ws.close()}catch(e){}fatal("ออกจากห้องแล้ว")};
 document.addEventListener("visibilitychange",()=>{
