@@ -406,8 +406,18 @@ async function wl(){try{if(navigator.wakeLock&&!wake)wake=await navigator.wakeLo
 
 const tmo=(pr,ms)=>Promise.race([pr,new Promise((_,r)=>setTimeout(()=>r(new Error("timeout")),ms))]);
 /* เตรียมไมค์+ระบบเสียงล่วงหน้า (เรียกตอนโหลดหน้า / แตะครั้งแรก / ตอนกดเข้าห้อง) เพื่อให้เข้าห้องจากแถบแจ้งเตือนได้โดยไม่ต้องกลับมาแตะ */
+/* กันระบบเสียงหลุดตอนสลับไปเกม: มีเสียงเงียบเล่นตลอด + ปลุกทันทีที่ระบบสั่งพัก/ขัดจังหวะ */
+let silent=null;
+function keepAlive(){
+  try{
+    silent=ac.createOscillator();const g=ac.createGain();g.gain.value=0.00002;silent.frequency.value=30;
+    silent.connect(g);g.connect(ac.destination);silent.start();
+  }catch(e){}
+  ac.onstatechange=()=>{if(ac.state!=="running"&&want){try{ac.resume()}catch(e){}}};
+  setInterval(()=>{if(ac&&ac.state!=="running"&&want){try{ac.resume()}catch(e){}}for(const n in peers){const a=peers[n].audio;if(a&&a.paused)a.play().catch(()=>{})}},1000);
+}
 async function prep(){
-  try{if(!ac)ac=new AudioContext()}catch(e){}
+  try{if(!ac){ac=new AudioContext();keepAlive()}}catch(e){}
   try{if(ac&&ac.state!=="running")await tmo(ac.resume(),2500)}catch(e){}
   try{if(!mic||mic.getAudioTracks().every(t=>t.readyState==="ended"))mic=await tmo(getMic(),8000)}catch(e){}
 }
