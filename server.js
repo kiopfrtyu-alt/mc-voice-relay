@@ -10,7 +10,7 @@ const rooms = new Map();
 const ipFails = new Map();
 setInterval(() => { const n = Date.now(); for (const [k, v] of ipFails) if (n - v.t > 60000) ipFails.delete(k); }, 60000);
 const mkRoom = (id) => {
-  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), codesReady: false, settings: new Map(), clients: new Map(), fails: new Map(), updated: 0 });
+  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), codesReady: false, settings: new Map(), admins: new Set(), pub: new Set(), clients: new Map(), fails: new Map(), updated: 0 });
   return rooms.get(id);
 };
 const sendRaw = (ws, s) => ws.readyState === 1 && ws.send(s);
@@ -59,7 +59,9 @@ const server = http.createServer((req, res) => {
           r.codes = m; r.codesReady = true;
         }
         r.players = players; r.updated = Date.now();
-        // คำสั่งจากในเกม (ไอเทม/เมนู) ส่งต่อให้แอปของผู้เล่นคนนั้น: mute | range | vol
+        // รายชื่อผู้มีสิทธิ์ประกาศทั่วโลก (OP/แท็ก) ที่แอดออนตัดสินให้ ไม่เชื่อค่าจากฝั่งแอป
+        if (Array.isArray(d.admins)) r.admins = new Set(d.admins.slice(0, 200).filter((n) => typeof n === "string" && n.length <= 32));
+        // คำสั่งจากในเกม (ไอเทม/เมนู) ส่งต่อให้แอปของผู้เล่นคนนั้น: mute | range | speak | vol | pub
         if (Array.isArray(d.cmds)) {
           for (const c of d.cmds.slice(0, 50)) {
             if (!c || typeof c.name !== "string") continue;
@@ -67,12 +69,14 @@ const server = http.createServer((req, res) => {
             if (!ws) continue;
             if (c.op === "mute" && typeof c.value === "boolean") send(ws, { t: "cmd", op: "mute", value: c.value });
             else if (c.op === "range" && isFinite(c.value)) send(ws, { t: "cmd", op: "range", value: Math.max(8, Math.min(64, +c.value)) });
+            else if (c.op === "speak" && isFinite(c.value)) send(ws, { t: "cmd", op: "speak", value: Math.max(2, Math.min(64, +c.value)) });
+            else if (c.op === "pub" && typeof c.value === "boolean") { if (c.value && r.admins.has(c.name)) r.pub.add(c.name); else r.pub.delete(c.name); }
             else if (c.op === "vol" && typeof c.target === "string" && isFinite(c.value)) send(ws, { t: "cmd", op: "vol", target: c.target.slice(0, 32), value: Math.max(0, Math.min(200, +c.value)) });
           }
         }
         // ตอบกลับสถานะการตั้งค่าของผู้เล่นที่เชื่อมแอปอยู่ (แอดออนใช้โชว์ในเมนู) ไม่มีรหัสในนี้
         const settings = {};
-        for (const n of r.clients.keys()) settings[n] = r.settings.get(n) || { muted: false, range: 32, vols: {} };
+        for (const n of r.clients.keys()) settings[n] = Object.assign({ muted: false, range: 32, speak: 32, vols: {} }, r.settings.get(n), { pub: r.pub.has(n), admin: r.admins.has(n) });
         res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ settings }));
       } catch (e) { res.writeHead(400); res.end(); }
     });
@@ -121,13 +125,16 @@ wss.on("connection", (ws, req) => {
       else if (d.t === "set") {
         const vols = {};
         if (d.vols && typeof d.vols === "object") for (const [k, v] of Object.entries(d.vols).slice(0, 100)) if (isFinite(v)) vols[String(k).slice(0, 32)] = Math.max(0, Math.min(200, +v));
-        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), vols });
+        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols });
+      } else if (d.t === "pub" && typeof d.value === "boolean") {
+        // เปิด/ปิดไมค์ประกาศจากแอป: เฉพาะผู้มีสิทธิ์ (รายชื่อมาจากแอดออน)
+        if (d.value && r.admins.has(name)) r.pub.add(name); else r.pub.delete(name);
       }
     } catch (e) {}
   });
   ws.on("close", () => {
     if (r.clients.get(name) === ws) {
-      r.clients.delete(name); r.settings.delete(name);
+      r.clients.delete(name); r.settings.delete(name); r.pub.delete(name);
       for (const c of r.clients.values()) send(c, { t: "leave", name });
     }
   });
@@ -136,8 +143,15 @@ wss.on("connection", (ws, req) => {
 setInterval(() => {
   for (const r of rooms.values()) {
     if (!r.clients.size) continue;
-    const s = JSON.stringify({ t: "state", players: r.players, fresh: Date.now() - r.updated < 5000 });
-    for (const c of r.clients.values()) sendRaw(c, s);
+    for (const n of [...r.pub]) if (!r.admins.has(n) || !r.clients.has(n)) r.pub.delete(n); // หมดสิทธิ์/หลุด = เลิกประกาศ
+    const speak = {}, pub = {};
+    for (const n of r.clients.keys()) { const st = r.settings.get(n); if (st) speak[n] = st.speak; if (r.pub.has(n)) pub[n] = true; }
+    const s = JSON.stringify({ t: "state", players: r.players, fresh: Date.now() - r.updated < 5000, speak, pub });
+    for (const [n, c] of r.clients) {
+      sendRaw(c, s);
+      const me = JSON.stringify({ t: "me", admin: r.admins.has(n), pub: r.pub.has(n) });
+      if (c._me !== me) { c._me = me; sendRaw(c, me); }
+    }
   }
 }, 250);
 

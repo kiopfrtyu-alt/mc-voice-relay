@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Minecraft Voice</title>
+<title>Demnit DumVc</title>
 <style>
 :root{--bg:#fff;--fg:#1c1c1e;--mut:#6b6b70;--line:#d4d4d8;--ok:#16a34a;--bad:#dc2626;--acc:#2563eb;--card:#f4f4f5}
 @media(prefers-color-scheme:dark){:root{--bg:#161618;--fg:#f2f2f3;--mut:#9a9aa0;--line:#3a3a3f;--card:#232326;--acc:#60a5fa;--ok:#4ade80;--bad:#f87171}}
@@ -35,8 +35,11 @@ small{color:var(--mut)}
 button.mini{width:auto;padding:6px 12px;font-weight:500}
 .two{display:flex;gap:8px}.two>button{flex:1}
 .sv .nm2{font-weight:700;font-size:1.05em}
+.bar{position:relative}.bar>u{position:absolute;top:-2px;bottom:-2px;width:3px;background:var(--bad);left:0;border-radius:2px}
+button.tg.on{background:var(--ok);color:#06280f;border-color:var(--ok)}
+.val{font-variant-numeric:tabular-nums}
 </style></head><body>
-<h3>Minecraft Voice</h3>
+<h3>Demnit DumVc</h3>
 
 <div id="v-gt" class="hide">
   <div class="sec">
@@ -51,6 +54,30 @@ button.mini{width:auto;padding:6px 12px;font-weight:500}
   <div class="row"><b id="hi"></b><button id="gtedit" class="mini">เปลี่ยนชื่อ</button></div>
   <div id="sl"></div>
   <button id="addbtn" class="primary">+ เพิ่มเซิร์ฟเวอร์</button>
+  <button id="testbtn">🎚 ทดสอบ/ปรับไมค์</button>
+</div>
+
+<div id="v-test" class="hide">
+  <div class="sec">
+    <b>ทดสอบและปรับไมค์</b>
+    <div class="bar"><i id="tlvl"></i><u id="tthr"></u></div>
+    <div class="lab">ระดับเสียงของคุณ (พูดแล้วแถบควรขยับ เส้นแดง = ระดับที่ต้องดังเกินถึงจะส่งเสียง)</div>
+  </div>
+  <div class="sec">
+    <div class="row"><span>ความดังไมค์</span><b id="t-gv" class="val">100%</b></div>
+    <input id="t-gain" type="range" min="0" max="200" step="5" value="100">
+    <div class="row"><span>ตัดเสียงเบา (ความไวไมค์)</span><b id="t-tv" class="val">ปิด</b></div>
+    <input id="t-gate" type="range" min="0" max="100" step="1" value="0">
+    <div class="lab">ดันขึ้นจนเส้นแดงอยู่เหนือเสียงรบกวนรอบตัว แต่ต่ำกว่าเสียงพูดของคุณ 0 = ปิด</div>
+    <div id="t-nogate" class="lab hide">เครื่องนี้ไม่รองรับตัดเสียงเบา</div>
+  </div>
+  <div class="sec">
+    <button id="t-ns" class="tg on">ตัดเสียงรบกวน: เปิด</button>
+    <button id="t-agc" class="tg on">ปรับระดับเสียงอัตโนมัติ: เปิด</button>
+    <button id="t-mon" class="tg">ฟังเสียงตัวเอง: ปิด</button>
+    <div class="lab">"ฟังเสียงตัวเอง" จะได้ยินเสียงของคุณกลับมาทันที เหมือนหน้าทดสอบไมค์ใน Discord ควรใส่หูฟัง ไม่งั้นเสียงจะหอน</div>
+  </div>
+  <button id="t-back" class="primary">กลับ</button>
 </div>
 
 <div id="v-add" class="hide">
@@ -79,11 +106,17 @@ button.mini{width:auto;padding:6px 12px;font-weight:500}
     <div class="lab">ระดับเสียงไมค์ของคุณ (ถ้าไม่ขยับ แปลว่าไมค์ปิดหรือไม่ได้ยินคุณ)</div>
   </div>
   <div class="sec">
-    <div class="row"><span>ระยะที่ได้ยิน</span><b id="rl">32 บล็อก</b></div>
-    <input id="range" type="range" min="8" max="64" step="1" value="32">
-    <div class="lab">ใครย่อตัว (sneak) อยู่จะเป็นเสียงกระซิบ ได้ยินแค่ราว 30% ของระยะ</div>
+    <div class="row"><span>ระยะที่คนอื่นได้ยินคุณ</span><b id="sp">32 บล็อก</b></div>
+    <input id="speak" type="range" min="2" max="64" step="1" value="32">
+    <div class="lab">เช่นตั้ง 4 = เฉพาะคนที่อยู่ห่างไม่เกิน 4 บล็อกถึงจะได้ยินคุณ ตอนย่อตัว (sneak) จะเป็นเสียงกระซิบ ได้ยินแค่ราว 30% ของระยะนี้</div>
+  </div>
+  <div id="adm" class="sec hide">
+    <b>ผู้ดูแล (OP)</b>
+    <button id="pubbtn" class="tg">📢 ไมค์ประกาศทั่วโลก: ปิด</button>
+    <div class="lab">เปิดแล้วทุกคนในเซิร์ฟได้ยินคุณเต็มเสียง ทุกมิติ ไม่สนระยะ</div>
   </div>
   <div class="sec"><ul id="ls"></ul><div id="empty" class="lab">ยังไม่มีผู้เล่นคนอื่นในห้องเสียง</div></div>
+  <button id="testbtn2">🎚 ทดสอบ/ปรับไมค์</button>
   <button id="leave">ตัดการเชื่อมต่อ</button>
   <p id="note" class="lab"></p>
 </div>
@@ -93,17 +126,18 @@ const $=id=>document.getElementById(id);
 const ICE={iceServers:[{urls:"stun:stun.l.google.com:19302"}]};
 const WHISPER=0.3;
 let ac,ws,mic,me="",roomId="",codeVal="",state={},peers={},rows={},chain=Promise.resolve();
-let RANGE=32,muted=false,mode="open",pttDown=false,joined=false,want=false,wake=null,hiddenAt=0,localAn=null;
+let muted=false,mode="open",pttDown=false,joined=false,want=false,wake=null,hiddenAt=0,mc=null,ME={admin:false,pub:false},MON=false;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const J=k=>{try{return JSON.parse(store.get(k))}catch(e){return null}};
 let gt=(store.get("gt")||store.get("name")||"").trim(),servers=Array.isArray(J("servers"))?J("servers"):[],cur=null,editing=null;
 const saveS=()=>store.set("servers",JSON.stringify(servers));
-const VIEWS=["v-gt","v-list","v-add","ctl"];
+const VIEWS=["v-gt","v-list","v-add","v-test","ctl"];
 const show=v=>VIEWS.forEach(i=>$(i).classList.toggle("hide",i!==v));
 const qp=new URLSearchParams(location.search);let qRoom=(qp.get("room")||"").trim(),qSn=(qp.get("sn")||"").trim();
 let VOLS=J("vols")||{};
-RANGE=+store.get("range")||32;$("range").value=RANGE;$("rl").textContent=RANGE+" บล็อก";
+let SPEAK=Math.max(2,Math.min(64,+store.get("speak")||32)),GAIN=store.get("gain")!=null?+store.get("gain"):100,GATE=+store.get("gate")||0,NS=store.get("ns")!=="0",AGC=store.get("agc")!=="0";
+$("speak").value=SPEAK;$("sp").textContent=SPEAK+" บล็อก";
 
 const status=(t,err)=>{$("st").textContent=t;$("st").className=err?"err":""};
 const tx=(to,data)=>ws&&ws.readyState===1&&ws.send(JSON.stringify({t:"signal",to,data}));
@@ -113,16 +147,52 @@ const rms=an=>{const b=new Uint8Array(an.fftSize);an.getByteTimeDomainData(b);le
 function impulse(){const n=ac.sampleRate*1.8,b=ac.createBuffer(2,n,ac.sampleRate);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3)}return b}
 
 /* ---------- ไมค์ ---------- */
-const getMic=()=>navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-function hookMic(){
-  const t=mic.getAudioTracks()[0];
-  if(t)t.onended=()=>{$("note").textContent="ไมค์ถูกระบบตัด (เช่นสลับแอป) กดปุ่มไมค์เพื่อเปิดใหม่"};
-  if(localAn)try{localAn.disconnect()}catch(e){}
-  const s=ac.createMediaStreamSource(mic);localAn=ac.createAnalyser();localAn.fftSize=512;s.connect(localAn);
+const getMic=()=>navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:NS,autoGainControl:AGC}});
+/* ตัดเสียงเบา (noise gate) ทำงานในเธรดเสียงของ AudioWorklet จึงไม่สะดุดแม้หน้าแอปถูกซ่อนตอนเล่นเกม */
+const GATE_JS=`class G extends AudioWorkletProcessor{constructor(){super();this.t=0;this.h=0;this.g=1;this.port.onmessage=e=>{this.t=e.data.t||0}}
+process(i,o){const x=i[0]&&i[0][0],y=o[0][0];if(!x||!y)return true;
+if(this.t<=0){y.set(x);this.g=1;return true}
+let s=0;for(let k=0;k<x.length;k++)s+=x[k]*x[k];const r=Math.sqrt(s/x.length);
+if(r>this.t)this.h=sampleRate*0.25;else this.h-=x.length;
+const tg=this.h>0?1:0,c=tg?0.03:0.004;
+for(let k=0;k<x.length;k++){this.g+=(tg-this.g)*c;y[k]=x[k]*this.g}
+return true}}registerProcessor("mc-gate",G)`;
+let wkReady=null;
+const loadWk=()=>wkReady||(wkReady=(ac&&ac.audioWorklet?ac.audioWorklet.addModule(URL.createObjectURL(new Blob([GATE_JS],{type:"application/javascript"}))).then(()=>true).catch(()=>false):Promise.resolve(false)));
+/* โซ่เสียงของไมค์: ไมค์จริง -> ความดังไมค์ -> ตัดเสียงเบา -> (ส่งให้เพื่อน / ฟังเสียงตัวเอง) แทร็กที่ส่งออกคงที่ตลอด เปลี่ยนไมค์จริงได้โดยไม่ต้องต่อ WebRTC ใหม่ */
+async function ensureChain(){
+  await prep();
+  if(!ac||!mic)return false;
+  if(!mc){
+    const wk=await loadWk();
+    const gain=ac.createGain(),dest=ac.createMediaStreamDestination(),an=ac.createAnalyser(),mon=ac.createGain();
+    an.fftSize=512;mon.gain.value=0;
+    let gate=null;
+    if(wk){try{gate=new AudioWorkletNode(ac,"mc-gate",{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]})}catch(e){gate=null}}
+    gain.connect(an);
+    if(gate){gain.connect(gate);gate.connect(dest);gate.connect(mon)}else{gain.connect(dest);gain.connect(mon)}
+    mon.connect(ac.destination);
+    mc={gain,gate,dest,an,mon,src:null,srcStream:null,out:dest.stream};
+  }
+  if(mc.srcStream!==mic){
+    if(mc.src)try{mc.src.disconnect()}catch(e){}
+    mc.src=ac.createMediaStreamSource(mic);mc.src.connect(mc.gain);mc.srcStream=mic;
+    const t=mic.getAudioTracks()[0];
+    if(t)t.onended=()=>{$("note").textContent="ไมค์ถูกระบบตัด (เช่นสลับแอป) กดปุ่มไมค์เพื่อเปิดใหม่"};
+  }
+  applyChain();applyMic();
+  return true;
+}
+function applyChain(){
+  if(!mc)return;
+  mc.gain.gain.value=GAIN/100;
+  if(mc.gate)mc.gate.port.postMessage({t:GATE/100*0.15});
+  mc.mon.gain.value=MON?1:0;
 }
 function applyMic(){
   const on=!muted&&(mode!=="ptt"||pttDown);
-  if(mic)mic.getAudioTracks().forEach(t=>t.enabled=on);
+  const t=mc&&mc.out.getAudioTracks()[0];
+  if(t)t.enabled=on;
   const b=$("mic");
   b.className=muted?"off":"on";
   b.textContent=muted?"🔇 ไมค์: ปิด (กดเพื่อเปิด)":(mode==="ptt"?"🎤 ไมค์พร้อม (กดเพื่อปิดทั้งหมด)":"🎤 ไมค์: เปิด (กดเพื่อปิด)");
@@ -130,12 +200,22 @@ function applyMic(){
 }
 async function reacquire(){
   try{
-    const s=await getMic(),nt=s.getAudioTracks()[0];
-    for(const p of Object.values(peers))p.pc.getSenders().forEach(x=>{if(x.track&&x.track.kind==="audio")x.replaceTrack(nt)});
-    mic.getTracks().forEach(t=>t.stop());mic=s;hookMic();applyMic();$("note").textContent="";
+    const s=await getMic();
+    try{mic&&mic.getTracks().forEach(t=>t.stop())}catch(e){}
+    mic=s;await ensureChain();$("note").textContent="";
   }catch(e){$("note").textContent="เปิดไมค์ใหม่ไม่ได้ ตรวจสิทธิ์ไมค์ของเบราว์เซอร์"}
 }
 const micDead=()=>mic&&mic.getAudioTracks().every(t=>t.readyState==="ended");
+/* สลับตัดเสียงรบกวน/ปรับระดับอัตโนมัติ: ลองสั่งกับไมค์ที่เปิดอยู่ก่อน ถ้าเครื่องไม่รับก็เปิดไมค์ใหม่ */
+async function refreshMic(){
+  const t=mic&&mic.getAudioTracks()[0];
+  if(!t)return;
+  try{
+    await t.applyConstraints({echoCancellation:true,noiseSuppression:NS,autoGainControl:AGC});
+    const st=t.getSettings?t.getSettings():{};
+    if(st.noiseSuppression!==undefined&&st.noiseSuppression!==NS||st.autoGainControl!==undefined&&st.autoGainControl!==AGC)await reacquire();
+  }catch(e){await reacquire()}
+}
 $("mic").onclick=()=>{if(micDead())return reacquire();muted=!muted;applyMic();report()};
 $("mode").onchange=()=>{mode=$("mode").value;pttDown=false;$("ptt").classList.toggle("hide",mode!=="ptt");applyMic()};
 const ptt=v=>{if(mode==="ptt"&&pttDown!==v){pttDown=v;applyMic()}};
@@ -146,15 +226,15 @@ pb.addEventListener("contextmenu",e=>e.preventDefault());
 addEventListener("keydown",e=>{if(e.code==="Space"&&mode==="ptt"&&!e.repeat&&!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)){e.preventDefault();ptt(true)}});
 addEventListener("keyup",e=>{if(e.code==="Space")ptt(false)});
 addEventListener("blur",()=>ptt(false));
-const setRange=v=>{RANGE=Math.max(8,Math.min(64,Math.round(+v)||32));$("range").value=RANGE;$("rl").textContent=RANGE+" บล็อก";store.set("range",RANGE)};
-$("range").oninput=e=>{setRange(e.target.value);report()};
 /* ส่งการตั้งค่าปัจจุบันให้รีเลย์ (แอดออนในเกมอ่านไปแสดงในเมนู) */
-function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,range:RANGE,vols:VOLS}))}
+const setSpeak=v=>{SPEAK=Math.max(2,Math.min(64,Math.round(+v)||32));$("speak").value=SPEAK;$("sp").textContent=SPEAK+" บล็อก";store.set("speak",SPEAK)};
+$("speak").oninput=e=>{setSpeak(e.target.value);report()};
+function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,speak:SPEAK,vols:VOLS}))}
 setInterval(report,2000);
 /* คำสั่งจากในเกม (ไอเทม/เมนู) */
 function onCmd(d){
   if(d.op==="mute"&&typeof d.value==="boolean"){muted=d.value;applyMic()}
-  else if(d.op==="range")setRange(d.value);
+  else if(d.op==="speak")setSpeak(d.value);
   else if(d.op==="vol"&&typeof d.target==="string"){
     VOLS[d.target]=Math.max(0,Math.min(200,+d.value||0));store.set("vols",JSON.stringify(VOLS));
     const p=peers[d.target];if(p&&p.vol)p.vol.gain.value=VOLS[d.target]/100;
@@ -170,7 +250,7 @@ function build(n,p,stream){
     dry=ac.createGain(),wet=ac.createGain(),rv=ac.createConvolver(),an=ac.createAnalyser();
   an.fftSize=512;
   lp.type="lowpass";lp.frequency.value=20000;
-  pan.panningModel="HRTF";pan.distanceModel="linear";pan.refDistance=1;pan.maxDistance=RANGE;pan.rolloffFactor=1;
+  pan.panningModel="HRTF";pan.distanceModel="linear";pan.refDistance=1;pan.maxDistance=32;pan.rolloffFactor=1;
   rv.buffer=impulse();wet.gain.value=0;dry.gain.value=0;
   src.connect(an);src.connect(lp);lp.connect(vol);vol.connect(pan);pan.connect(dry);pan.connect(rv);rv.connect(wet);dry.connect(ac.destination);wet.connect(ac.destination);
   Object.assign(p,{lp,vol,pan,dry,wet,an,audio:a});
@@ -184,7 +264,7 @@ function build(n,p,stream){
 function connect(n,init){
   if(peers[n])return peers[n];
   const pc=new RTCPeerConnection(ICE),p={pc,q:[],state:"new"};peers[n]=p;
-  mic.getTracks().forEach(t=>pc.addTrack(t,mic));
+  mc.out.getAudioTracks().forEach(t=>pc.addTrack(t,mc.out));
   pc.onicecandidate=e=>e.candidate&&tx(n,{c:e.candidate});
   pc.ontrack=e=>{if(!p.pan)build(n,p,e.streams[0])};
   pc.onconnectionstatechange=()=>{p.state=pc.connectionState};
@@ -218,12 +298,19 @@ function update(){
   if(!joined)return;
   status(!state.fresh?"เกมยังไม่ส่งข้อมูลมา":m?"เชื่อมกับเกมแล้ว ("+me+")":"เชื่อมแล้ว รอคุณเข้าเกม ("+me+")",!state.fresh);
   if(m){const L=ac.listener;ramp(L.positionX,m.x);ramp(L.positionY,m.y+1.6);ramp(L.positionZ,m.z);ramp(L.forwardX,m.dx);ramp(L.forwardY,m.dy);ramp(L.forwardZ,m.dz);L.upX.value=0;L.upY.value=1;L.upZ.value=0}
+  const SP=state.speak||{},PB=state.pub||{};
   for(const n in peers){
     const p=peers[n],o=P[n],li=rows[n];if(!p.pan||!li)continue;
     const s=li.querySelector(".s");
+    if(PB[n]&&m&&o){ // ไมค์ประกาศทั่วโลก: ได้ยินเต็มเสียง ไม่สนระยะ/มิติ/น้ำ/ถ้ำ และไม่มีทิศทาง (วางเสียงไว้ที่หัวผู้ฟัง)
+      p.pan.maxDistance=1e6;
+      ramp(p.pan.positionX,m.x);ramp(p.pan.positionY,m.y+1.6);ramp(p.pan.positionZ,m.z);
+      ramp(p.dry.gain,1);ramp(p.lp.frequency,20000);ramp(p.wet.gain,0);
+      s.textContent=p.state==="failed"?"เชื่อมต่อเสียงไม่ได้ (เครือข่ายอาจต้องใช้ TURN)":"📢 ประกาศทั่วโลก";continue;
+    }
     const off=!m||!o||m.dim!==o.dim;
     if(off){ramp(p.dry.gain,0);ramp(p.wet.gain,0);s.textContent=!o?"ไม่อยู่ในเกม":"คนละมิติ";continue}
-    const eff=RANGE*(o.sneak?WHISPER:1),d=Math.hypot(m.x-o.x,m.y-o.y,m.z-o.z);
+    const eff=(SP[n]||32)*(o.sneak?WHISPER:1),d=Math.hypot(m.x-o.x,m.y-o.y,m.z-o.z);
     p.pan.maxDistance=Math.max(eff,2);
     ramp(p.pan.positionX,o.x);ramp(p.pan.positionY,o.y+1.6);ramp(p.pan.positionZ,o.z);
     ramp(p.dry.gain,1);
@@ -239,8 +326,9 @@ function update(){
   }
 }
 setInterval(()=>{
+  if(mc&&!$("v-test").classList.contains("hide")){$("tlvl").style.width=Math.min(100,rms(mc.an)*400)+"%"}
   if(!joined)return;
-  if(localAn)$("lvl").style.width=Math.min(100,rms(localAn)*400)+"%";
+  if(mc){const w=Math.min(100,rms(mc.an)*400)+"%";$("lvl").style.width=w;$("tlvl").style.width=w}
   for(const n in peers){const p=peers[n],li=rows[n];if(p.an&&li)li.classList.toggle("talk",rms(p.an)>0.02)}
 },120);
 
@@ -261,6 +349,7 @@ function connectWS(){
     else if(d.t==="leave")drop(d.name);
     else if(d.t==="state"){state=d;update()}
     else if(d.t==="cmd")onCmd(d);
+    else if(d.t==="me"){ME={admin:d.admin===true,pub:d.pub===true};$("adm").classList.toggle("hide",!ME.admin);$("pubbtn").className="tg"+(ME.pub?" on":"");$("pubbtn").textContent="📢 ไมค์ประกาศทั่วโลก: "+(ME.pub?"เปิดอยู่ (กดเพื่อปิด)":"ปิด")}
     else if(d.t==="error")lastErr=d.why;
   };
   ws.onclose=e=>{
@@ -298,9 +387,9 @@ async function startConn(sv){
   $("cur").textContent=sv.name;show("ctl");status("กำลังเปิดไมค์...");
   await prep();
   if(!mic){fatal("เปิดไมค์ไม่ได้ ต้องอนุญาตไมค์ (ตั้งค่า > แอป > Minecraft Voice > สิทธิ์) แล้วลองใหม่");return}
-  if(!ac){fatal("เปิดระบบเสียงไม่ได้");return}
+  if(!ac||!(await ensureChain())){fatal("เปิดระบบเสียงไม่ได้");return}
   status("กำลังเชื่อมต่อห้อง...");
-  hookMic();applyMic();wl();want=true;connectWS();
+  applyMic();wl();want=true;connectWS();
   /* ถ้าระบบเสียงยังค้าง (ยังไม่มีการแตะ) จะปลุกใหม่ทุก 1 วินาที และตอนแตะ/กลับมาที่หน้า */
   const kick=setInterval(()=>{if(ac.state==="running"||!want){clearInterval(kick)}else{try{ac.resume()}catch(e){}}},1000);
 }
@@ -364,6 +453,33 @@ $("go").onclick=()=>{
   if(/^\d{6}$/.test(c)){sv.code=c;saveS()}
   startConn(sv);
 };
+/* ---------- หน้าทดสอบ/ปรับไมค์ ---------- */
+let prevView="v-list";
+const tgSet=(id,on,txt)=>{const b=$(id);b.className="tg"+(on?" on":"");b.textContent=txt+": "+(on?"เปิด":"ปิด")};
+function syncTest(){
+  $("t-gain").value=GAIN;$("t-gv").textContent=GAIN+"%";
+  $("t-gate").value=GATE;$("t-tv").textContent=GATE?GATE+"":"ปิด";$("tthr").style.left=Math.min(100,GATE*0.6)+"%";
+  $("t-nogate").classList.toggle("hide",!mc||!!mc.gate);
+  tgSet("t-ns",NS,"ตัดเสียงรบกวน");tgSet("t-agc",AGC,"ปรับระดับเสียงอัตโนมัติ");tgSet("t-mon",MON,"ฟังเสียงตัวเอง");
+}
+async function openTest(from){
+  prevView=from;show("v-test");syncTest();status("กำลังเปิดไมค์...");
+  const ok=await ensureChain();
+  status(ok?"":"เปิดไมค์ไม่ได้ ตรวจสิทธิ์ไมค์ของแอป",!ok);syncTest();
+}
+function leaveTest(){
+  MON=false;applyChain();status("");
+  if(prevView==="ctl"&&(want||joined)){show("ctl")}else{show("v-list");renderList()}
+}
+$("testbtn").onclick=()=>openTest("v-list");
+$("testbtn2").onclick=()=>openTest("ctl");
+$("t-back").onclick=leaveTest;
+$("t-gain").oninput=e=>{GAIN=+e.target.value;store.set("gain",GAIN);$("t-gv").textContent=GAIN+"%";applyChain()};
+$("t-gate").oninput=e=>{GATE=+e.target.value;store.set("gate",GATE);syncTest();applyChain()};
+$("t-ns").onclick=async()=>{NS=!NS;store.set("ns",NS?"1":"0");syncTest();await refreshMic()};
+$("t-agc").onclick=async()=>{AGC=!AGC;store.set("agc",AGC?"1":"0");syncTest();await refreshMic()};
+$("t-mon").onclick=()=>{MON=!MON;applyChain();syncTest()};
+$("pubbtn").onclick=()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:"pub",value:!ME.pub}))};
 route();
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden){hiddenAt=Date.now();return}
