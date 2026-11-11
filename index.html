@@ -1,45 +1,76 @@
 <!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0d1712">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;700&display=swap">
 <title>Demnit DumVc</title>
 <style>
-:root{--bg:#fff;--fg:#1c1c1e;--mut:#6b6b70;--line:#d4d4d8;--ok:#16a34a;--bad:#dc2626;--acc:#2563eb;--card:#f4f4f5}
-@media(prefers-color-scheme:dark){:root{--bg:#161618;--fg:#f2f2f3;--mut:#9a9aa0;--line:#3a3a3f;--card:#232326;--acc:#60a5fa;--ok:#4ade80;--bad:#f87171}}
-*{box-sizing:border-box}
-body{font-family:system-ui,sans-serif;max-width:440px;margin:auto;padding:16px;background:var(--bg);color:var(--fg)}
-h3{margin:.2em 0 .6em}
-input,button,select{font:inherit;padding:10px;width:100%;margin:4px 0;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
-input[type=range]{padding:0;margin:6px 0;accent-color:var(--acc)}
-button{cursor:pointer;font-weight:600}
-button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
-.sec{background:var(--card);border-radius:12px;padding:12px;margin:12px 0}
-.sec.plain{background:none;padding:0}
-#st{min-height:1.4em;margin:8px 0;font-size:.95em}
-#st.err{color:var(--bad)}
+:root{--bg:#0d1712;--fg:#eaf5ec;--mut:#8fa898;--line:#26402f;--card:#15241b;--card2:#1b2f23;--ok:#4ade80;--ok2:#2fa24a;--bad:#f87171;--acc:#4ade80;--gold:#fbbf24;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{font-family:"Kanit","Noto Sans Thai",system-ui,sans-serif;max-width:460px;margin:auto;padding:18px 16px 40px;color:var(--fg);min-height:100vh;
+  background:radial-gradient(120% 60% at 50% -10%,#1d4a31 0%,rgba(13,23,18,0) 60%),
+  linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),var(--bg);
+  background-size:auto,26px 26px,26px 26px,auto}
+.hd{display:flex;align-items:center;gap:12px;margin:2px 0 14px}
+.hd svg{flex:none;filter:drop-shadow(0 2px 0 rgba(0,0,0,.5))}
+h3{margin:0;font-size:1.55em;font-weight:700;letter-spacing:.3px;color:#fff;text-shadow:0 0 18px rgba(74,222,128,.35),0 2px 0 rgba(0,0,0,.45)}
+.hd small{display:block;margin-top:-2px}
+input,button,select{font:inherit;padding:11px 12px;width:100%;margin:5px 0;border:1px solid var(--line);border-radius:10px;background:#0f1c15;color:var(--fg)}
+input::placeholder{color:#5f7a69}
+input:focus,select:focus{outline:none;border-color:var(--ok);box-shadow:0 0 0 3px rgba(74,222,128,.2)}
+input[type=range]{-webkit-appearance:none;appearance:none;padding:0;height:12px;margin:10px 0;border-radius:7px;background:linear-gradient(#08100b,#0e1a13);border:1px solid var(--line)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:7px;background:linear-gradient(#86efac,#34b457);border:2px solid #07120b;box-shadow:inset 0 -3px 0 rgba(0,0,0,.28),0 2px 0 rgba(0,0,0,.4)}
+input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:7px;background:#4ade80;border:2px solid #07120b}
+button{cursor:pointer;font-weight:600;background:linear-gradient(#22392b,#1a2d22);border:1px solid #2f5440;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 3px 0 #0a140e;transition:transform .06s,box-shadow .06s,filter .15s}
+button:active{transform:translateY(2px);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 1px 0 #0a140e}
+button:disabled{opacity:.5}
+button.primary{background:linear-gradient(#5be38a,#2fa24a);color:#05200e;border-color:#1c6b32;text-shadow:0 1px 0 rgba(255,255,255,.25);box-shadow:inset 0 2px 0 rgba(255,255,255,.35),inset 0 -3px 0 rgba(0,0,0,.18),0 3px 0 #0e3a1b}
+button.primary:active{box-shadow:inset 0 2px 0 rgba(255,255,255,.35),inset 0 -3px 0 rgba(0,0,0,.18),0 1px 0 #0e3a1b}
+.sec{background:linear-gradient(var(--card2),var(--card));border:1px solid var(--line);border-left:4px solid var(--ok2);border-radius:14px;padding:14px;margin:14px 0;box-shadow:0 6px 16px rgba(0,0,0,.28)}
+.sec.plain{background:none;border:0;box-shadow:none;padding:0}
+.sec.tip{border-left-color:var(--gold);background:linear-gradient(#2a2412,#1c1a10)}
+.sec.tip b{color:var(--gold)}
+#st{min-height:1.4em;margin:10px 0;font-size:.95em;padding:9px 12px;border-radius:10px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.28);color:#c9f7d6}
+#st:empty{display:none}
+#st.err{color:#fecaca;background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.4)}
 .hide{display:none!important}
-#mic.off{background:var(--bad);color:#fff;border-color:var(--bad)}
-#mic.on{background:var(--ok);color:#06280f;border-color:var(--ok)}
+#mic{font-size:1.05em;padding:14px}
+#mic.off{background:linear-gradient(#f87171,#dc2626);color:#fff;border-color:#991b1b;box-shadow:inset 0 2px 0 rgba(255,255,255,.3),inset 0 -3px 0 rgba(0,0,0,.2),0 3px 0 #5b0f0f}
+#mic.on{background:linear-gradient(#5be38a,#2fa24a);color:#05200e;border-color:#1c6b32;box-shadow:inset 0 2px 0 rgba(255,255,255,.35),inset 0 -3px 0 rgba(0,0,0,.18),0 3px 0 #0e3a1b}
 #ptt{height:84px;font-size:1.15em;touch-action:none;user-select:none;-webkit-user-select:none}
-#ptt.down{background:var(--ok);color:#06280f;border-color:var(--ok)}
-.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:6px 0}
-.bar>i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
+#ptt.down{background:linear-gradient(#5be38a,#2fa24a);color:#05200e;border-color:#1c6b32}
+.bar{position:relative;height:12px;background:#08100b;border:1px solid var(--line);border-radius:7px;margin:8px 0;overflow:visible}
+.bar>i{display:block;height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,#4ade80 0%,#a3e635 55%,#fbbf24 78%,#f87171 100%);background-size:260px 100%;transition:width .08s}
+.bar>u{position:absolute;top:-4px;bottom:-4px;width:3px;background:var(--bad);left:0;border-radius:2px;box-shadow:0 0 8px var(--bad)}
 .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
-.lab{font-size:.9em;color:var(--mut)}
+.lab{font-size:.88em;color:var(--mut);line-height:1.4}
 ul{list-style:none;padding:0;margin:0}
-li{padding:8px 0;border-top:1px solid var(--line)}
+li{padding:10px 0;border-top:1px solid var(--line)}
 li:first-child{border-top:0}
 li .nm{font-weight:600}
-li .nm::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--line);margin-right:8px}
-li.talk .nm::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+li .nm::before{content:"";display:inline-block;width:11px;height:11px;border-radius:3px;background:#34493c;margin-right:9px}
+li.talk .nm::before{background:var(--ok);box-shadow:0 0 10px var(--ok)}
 li .s{font-size:.85em;color:var(--mut)}
 small{color:var(--mut)}
-button.mini{width:auto;padding:6px 12px;font-weight:500}
-.two{display:flex;gap:8px}.two>button{flex:1}
-.sv .nm2{font-weight:700;font-size:1.05em}
-.bar{position:relative}.bar>u{position:absolute;top:-2px;bottom:-2px;width:3px;background:var(--bad);left:0;border-radius:2px}
-button.tg.on{background:var(--ok);color:#06280f;border-color:var(--ok)}
-.val{font-variant-numeric:tabular-nums}
+button.mini{width:auto;padding:6px 14px;font-weight:500;box-shadow:0 2px 0 #0a140e}
+.two{display:flex;gap:10px}.two>button{flex:1}
+.sv .nm2{font-weight:700;font-size:1.12em;color:#fff}
+.sv .nm2::before{content:"";display:inline-block;width:12px;height:12px;margin-right:9px;border-radius:3px;background:linear-gradient(#86efac,#34b457);box-shadow:0 0 10px rgba(74,222,128,.6)}
+button.tg.on{background:linear-gradient(#5be38a,#2fa24a);color:#05200e;border-color:#1c6b32}
+.val{font-variant-numeric:tabular-nums;color:var(--ok)}
+b{font-weight:600}
 </style></head><body>
-<h3>Demnit DumVc</h3>
+<header class="hd">
+  <svg width="40" height="40" viewBox="0 0 32 32" aria-hidden="true">
+    <rect x="10" y="3" width="12" height="17" rx="5" fill="#14161c"/><rect x="11" y="4" width="10" height="15" rx="4" fill="#606672"/>
+    <rect x="12" y="5" width="4" height="7" rx="2" fill="#aab2be"/><path d="M12 8h8M12 11h8M12 14h8M12 17h8" stroke="#2d3038" stroke-width="1.2"/>
+    <path d="M7 15a9 9 0 0 0 18 0" fill="none" stroke="#14161c" stroke-width="3.2"/><path d="M7.6 15a8.4 8.4 0 0 0 16.8 0" fill="none" stroke="#4ade80" stroke-width="2"/>
+    <rect x="14" y="24" width="4" height="4" fill="#14161c"/><rect x="15" y="24" width="2" height="4" fill="#606672"/>
+    <rect x="9" y="27" width="14" height="3" rx="1" fill="#14161c"/><rect x="10" y="28" width="12" height="1" fill="#4ade80"/>
+  </svg>
+  <div><h3>Demnit DumVc</h3><small>เสียงตามระยะสำหรับ Minecraft</small></div>
+</header>
 
 <div id="v-gt" class="hide">
   <div class="sec">
@@ -54,7 +85,10 @@ button.tg.on{background:var(--ok);color:#06280f;border-color:var(--ok)}
   <div class="row"><b id="hi"></b><button id="gtedit" class="mini">เปลี่ยนชื่อ</button></div>
   <div id="sl"></div>
   <button id="addbtn" class="primary">+ เพิ่มเซิร์ฟเวอร์</button>
-  <button id="testbtn">🎚 ทดสอบ/ปรับไมค์</button>
+  <button id="testbtn">🎧 ทดสอบ/ปรับไมค์</button>
+  <div class="sec tip"><b>ใช้ในเกม</b>
+    <div class="lab">ไอเทมไมค์: แตะ = เปิด/ปิดไมค์ · ย่อตัว (sneak) + แตะ = เมนูปรับเสียง<br>เมนูมี: ระยะที่คนอื่นได้ยินคุณ, เสียงรายคน และไมค์ประกาศทั่วโลก (เฉพาะ OP)</div>
+  </div>
 </div>
 
 <div id="v-test" class="hide">
@@ -116,7 +150,7 @@ button.tg.on{background:var(--ok);color:#06280f;border-color:var(--ok)}
     <div class="lab">เปิดแล้วทุกคนในเซิร์ฟได้ยินคุณเต็มเสียง ทุกมิติ ไม่สนระยะ</div>
   </div>
   <div class="sec"><ul id="ls"></ul><div id="empty" class="lab">ยังไม่มีผู้เล่นคนอื่นในห้องเสียง</div></div>
-  <button id="testbtn2">🎚 ทดสอบ/ปรับไมค์</button>
+  <button id="testbtn2">🎧 ทดสอบ/ปรับไมค์</button>
   <button id="leave">ตัดการเชื่อมต่อ</button>
   <p id="note" class="lab"></p>
 </div>
@@ -135,6 +169,7 @@ const saveS=()=>store.set("servers",JSON.stringify(servers));
 const VIEWS=["v-gt","v-list","v-add","v-test","ctl"];
 const show=v=>VIEWS.forEach(i=>$(i).classList.toggle("hide",i!==v));
 const qp=new URLSearchParams(location.search);let qRoom=(qp.get("room")||"").trim(),qSn=(qp.get("sn")||"").trim();
+const INIT_ROOM=qRoom,INIT_SN=qSn;
 let VOLS=J("vols")||{};
 let SPEAK=Math.max(2,Math.min(64,+store.get("speak")||32)),GAIN=store.get("gain")!=null?+store.get("gain"):100,GATE=+store.get("gate")||0,NS=store.get("ns")!=="0",AGC=store.get("agc")!=="0";
 $("speak").value=SPEAK;$("sp").textContent=SPEAK+" บล็อก";
@@ -445,12 +480,16 @@ $("a-save").onclick=()=>{
   else{sv={id:Date.now().toString(36),name,room:inv.room,code};servers.push(sv)}
   saveS();status("บันทึกแล้ว");show("v-list");renderList();
 };
-/* ช่องซ่อนสำหรับปุ่ม "ใส่รหัส" บนแถบแจ้งเตือนของแอปรุ่นเดิม */
+/* ช่องซ่อนสำหรับปุ่ม "ใส่รหัส" บนแถบแจ้งเตือนของแอป: ใช้รหัสที่พิมพ์กับเซิร์ฟล่าสุด ถ้ายังไม่มีเซิร์ฟในแอปจะสร้างให้จากห้องที่แอปเปิดอยู่ */
 $("go").onclick=()=>{
-  const sv=servers.find(x=>x.id===store.get("last"))||servers[0];
-  if(!sv||!gt){status("เพิ่มชื่อ Xbox และเซิร์ฟเวอร์ในแอปก่อน",true);return}
-  const c=$("code").value.trim();
-  if(/^\d{6}$/.test(c)){sv.code=c;saveS()}
+  const c=$("code").value.trim(),okc=/^\d{6}$/.test(c);
+  if(!gt){status("ยังไม่ได้ใส่ชื่อ Xbox เปิดแอปแล้วใส่ชื่อ Xbox ก่อน",true);return}
+  let sv=servers.find(x=>x.id===store.get("last"))||servers[0];
+  if(!sv){
+    if(!INIT_ROOM){status("ยังไม่มีเซิร์ฟเวอร์ในแอป เปิดแอปแล้วกด + เพิ่มเซิร์ฟเวอร์",true);return}
+    if(!okc){status("รหัสต้องเป็นตัวเลข 6 หลัก ลองกด \"ใส่รหัส\" ใหม่",true);return}
+    sv={id:Date.now().toString(36),name:INIT_SN||INIT_ROOM,room:INIT_ROOM,code:c};servers.push(sv);saveS();
+  }else if(okc){sv.code=c;saveS()}
   startConn(sv);
 };
 /* ---------- หน้าทดสอบ/ปรับไมค์ ---------- */
