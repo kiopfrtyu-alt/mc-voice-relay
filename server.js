@@ -7,8 +7,10 @@ const ENV_SECRET = process.env.RELAY_SECRET || "";
 if (!ENV_SECRET) console.warn("คำเตือน: ยังไม่ได้ตั้ง RELAY_SECRET ใครรู้รหัสห้องก็ยึดห้องได้ถ้าส่งก่อนเซิร์ฟ");
 
 const rooms = new Map();
+const ipFails = new Map();
+setInterval(() => { const n = Date.now(); for (const [k, v] of ipFails) if (n - v.t > 60000) ipFails.delete(k); }, 60000);
 const mkRoom = (id) => {
-  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), clients: new Map(), fails: new Map(), updated: 0 });
+  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), codesReady: false, settings: new Map(), clients: new Map(), fails: new Map(), updated: 0 });
   return rooms.get(id);
 };
 const sendRaw = (ws, s) => ws.readyState === 1 && ws.send(s);
@@ -34,7 +36,7 @@ const server = http.createServer((req, res) => {
           if (r.secret === null) r.secret = String(d.secret);
           else if (!same(r.secret, d.secret)) { res.writeHead(403); return res.end(); }
         }
-        const players = Object.create(null), codes = new Map();
+        const players = Object.create(null), legacy = new Map();
         for (const p of d.players.slice(0, 200)) {
           if (!p || typeof p.name !== "string" || !p.name) continue;
           const name = p.name.slice(0, 32);
@@ -42,10 +44,36 @@ const server = http.createServer((req, res) => {
             name, x: num(p.x), y: num(p.y), z: num(p.z), dx: num(p.dx), dy: num(p.dy), dz: num(p.dz),
             dim: String(p.dim || "").slice(0, 40), water: p.water === true, covered: p.covered === true, sneak: p.sneak === true,
           };
-          if (p.code) codes.set(name, String(p.code).slice(0, 12)); // รหัสจับคู่ ห้ามส่งต่อให้ผู้เล่นคนอื่น
+          if (p.code) legacy.set(name, String(p.code).slice(0, 12)); // แอดออนรุ่นเก่า: ส่งรหัสมากับผู้เล่นออนไลน์
         }
-        r.players = players; r.codes = codes; r.updated = Date.now();
-        res.writeHead(204); res.end();
+        // แอดออนรุ่นใหม่ส่ง codes = { ชื่อ: รหัส } ของทุกคนที่เคยเข้าเกม (รวมคนที่ออฟไลน์) รหัสห้ามส่งต่อให้ผู้เล่นคนอื่น
+        if (d.codes && typeof d.codes === "object" && !Array.isArray(d.codes)) {
+          const m = new Map();
+          for (const [n, c] of Object.entries(d.codes).slice(0, 5000)) {
+            if (typeof n === "string" && n && n.length <= 32 && /^\d{4,12}$/.test(String(c))) m.set(n.toLowerCase(), { name: n, code: String(c) });
+          }
+          r.codes = m; r.codesReady = true;
+        } else if (legacy.size) {
+          const m = new Map();
+          for (const [n, c] of legacy) m.set(n.toLowerCase(), { name: n, code: c });
+          r.codes = m; r.codesReady = true;
+        }
+        r.players = players; r.updated = Date.now();
+        // คำสั่งจากในเกม (ไอเทม/เมนู) ส่งต่อให้แอปของผู้เล่นคนนั้น: mute | range | vol
+        if (Array.isArray(d.cmds)) {
+          for (const c of d.cmds.slice(0, 50)) {
+            if (!c || typeof c.name !== "string") continue;
+            const ws = r.clients.get(c.name);
+            if (!ws) continue;
+            if (c.op === "mute" && typeof c.value === "boolean") send(ws, { t: "cmd", op: "mute", value: c.value });
+            else if (c.op === "range" && isFinite(c.value)) send(ws, { t: "cmd", op: "range", value: Math.max(8, Math.min(64, +c.value)) });
+            else if (c.op === "vol" && typeof c.target === "string" && isFinite(c.value)) send(ws, { t: "cmd", op: "vol", target: c.target.slice(0, 32), value: Math.max(0, Math.min(200, +c.value)) });
+          }
+        }
+        // ตอบกลับสถานะการตั้งค่าของผู้เล่นที่เชื่อมแอปอยู่ (แอดออนใช้โชว์ในเมนู) ไม่มีรหัสในนี้
+        const settings = {};
+        for (const n of r.clients.keys()) settings[n] = r.settings.get(n) || { muted: false, range: 32, vols: {} };
+        res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ settings }));
       } catch (e) { res.writeHead(400); res.end(); }
     });
     return;
@@ -62,34 +90,44 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 wss.on("connection", (ws, req) => {
   const u = new URL(req.url, "http://x");
-  const id = u.searchParams.get("room"), name = u.searchParams.get("name"), code = u.searchParams.get("code");
+  let name = u.searchParams.get("name"); const id = u.searchParams.get("room"), code = u.searchParams.get("code");
   // เหตุผลตอนปิดต้องไม่เกิน 123 ไบต์ (ภาษาไทยตัวละ 3 ไบต์) จึงส่งข้อความไทยทาง message แล้วปิดด้วยเหตุผลสั้น ๆ
   const reject = (c, why) => { send(ws, { t: "error", code: c, why }); ws.close(c, "rejected"); };
   if (!id || !name || !code) return reject(4000, "ข้อมูลไม่ครบ");
   const r = rooms.get(id);
-  if (!r || Date.now() - r.updated > 15000) return reject(4004, "ห้องนี้ยังไม่มีข้อมูลจากเกม (เซิร์ฟเวอร์ยังไม่ส่งมา)");
+  // เซิร์ฟเวอร์ต้องออนไลน์ (ส่งข้อมูลมาในช่วง 15 วินาทีล่าสุด) แต่ผู้เล่นไม่ต้องอยู่ในเกม: เชื่อมรอไว้ได้
+  if (!r || Date.now() - r.updated > 15000 || !r.codesReady) return reject(4004, "เซิร์ฟเวอร์เกมยังไม่ออนไลน์ หรือรีเลย์เพิ่งตื่น กำลังรอข้อมูลจากเกม");
 
-  // จำกัดการเดารหัส: ผิดเกิน 5 ครั้งต่อนาทีต่อชื่อ
-  const f = r.fails.get(name) || { n: 0, t: Date.now() };
-  if (Date.now() - f.t > 60000) { f.n = 0; f.t = Date.now(); }
-  if (f.n >= 5) return reject(4029, "ลองรหัสผิดหลายครั้ง รอ 1 นาทีแล้วลองใหม่");
-  if (!r.players[name]) return reject(4001, "ไม่พบชื่อนี้ในเกม (ต้องเข้าเกมก่อน และพิมพ์ชื่อให้ตรงตัวพิมพ์)");
-  const want = r.codes.get(name);
-  if (!want || !same(want, code)) { f.n++; r.fails.set(name, f); return reject(4003, "รหัสไม่ถูกต้อง (ดูรหัสในแชตเกม หรือพิมพ์ /scriptevent voice:code)"); }
-  r.fails.delete(name);
+  // จำกัดการเดารหัส: ผิดเกิน 5 ครั้งต่อนาทีต่อชื่อ และเกิน 30 ครั้งต่อนาทีต่อ IP
+  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  const key = name.toLowerCase();
+  const lim = (m, k) => { let f = m.get(k); if (!f || Date.now() - f.t > 60000) { f = { n: 0, t: Date.now() }; m.set(k, f); } return f; };
+  const f = lim(r.fails, key), fi = lim(ipFails, id + "|" + ip);
+  if (f.n >= 5 || fi.n >= 30) return reject(4029, "ลองรหัสผิดหลายครั้ง รอ 1 นาทีแล้วลองใหม่");
+  const ent = r.codes.get(key);
+  // ชื่อไม่มีในระบบ กับรหัสผิด ตอบเหมือนกัน เพื่อไม่ให้เดาว่ามีชื่อใครบ้าง
+  if (!ent || !same(ent.code, code)) { f.n++; fi.n++; return reject(4003, "ชื่อหรือรหัสไม่ถูกต้อง (ต้องเข้าเกมเซิร์ฟเวอร์นี้อย่างน้อยหนึ่งครั้งเพื่อรับรหัส ดูรหัสด้วย /scriptevent voice:code)"); }
+  r.fails.delete(key);
+  const canon = ent.name; // ใช้ชื่อตามที่เกมเก็บไว้ (ตัวพิมพ์ใหญ่เล็กตรงเกม)
+  name = canon;
 
   if (r.clients.has(name)) { const old = r.clients.get(name); send(old, { t: "error", code: 4005, why: "มีการเข้าห้องด้วยชื่อนี้จากอุปกรณ์อื่น" }); old.close(4005, "replaced"); }
   r.clients.set(name, ws);
-  send(ws, { t: "peers", peers: [...r.clients.keys()].filter((n) => n !== name) });
+  send(ws, { t: "peers", name, peers: [...r.clients.keys()].filter((n) => n !== name) });
   ws.on("message", (m) => {
     try {
       const d = JSON.parse(m);
       if (d.t === "signal" && typeof d.to === "string") { const to = r.clients.get(d.to); if (to) send(to, { t: "signal", from: name, data: d.data }); }
+      else if (d.t === "set") {
+        const vols = {};
+        if (d.vols && typeof d.vols === "object") for (const [k, v] of Object.entries(d.vols).slice(0, 100)) if (isFinite(v)) vols[String(k).slice(0, 32)] = Math.max(0, Math.min(200, +v));
+        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), vols });
+      }
     } catch (e) {}
   });
   ws.on("close", () => {
     if (r.clients.get(name) === ws) {
-      r.clients.delete(name);
+      r.clients.delete(name); r.settings.delete(name);
       for (const c of r.clients.values()) send(c, { t: "leave", name });
     }
   });

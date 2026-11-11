@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Minecraft Voice (ต้นแบบ)</title>
+<title>Minecraft Voice</title>
 <style>
 :root{--bg:#fff;--fg:#1c1c1e;--mut:#6b6b70;--line:#d4d4d8;--ok:#16a34a;--bad:#dc2626;--acc:#2563eb;--card:#f4f4f5}
 @media(prefers-color-scheme:dark){:root{--bg:#161618;--fg:#f2f2f3;--mut:#9a9aa0;--line:#3a3a3f;--card:#232326;--acc:#60a5fa;--ok:#4ade80;--bad:#f87171}}
@@ -32,20 +32,45 @@ li .nm::before{content:"";display:inline-block;width:10px;height:10px;border-rad
 li.talk .nm::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}
 li .s{font-size:.85em;color:var(--mut)}
 small{color:var(--mut)}
+button.mini{width:auto;padding:6px 12px;font-weight:500}
+.two{display:flex;gap:8px}.two>button{flex:1}
+.sv .nm2{font-weight:700;font-size:1.05em}
 </style></head><body>
-<h3>เสียงตามระยะ Minecraft (ต้นแบบ)</h3>
+<h3>Minecraft Voice</h3>
 
-<div id="join">
-  <input id="room" placeholder="รหัสห้อง" autocomplete="off" autocapitalize="off">
-  <input id="name" placeholder="ชื่อ Xbox (ตรงตัวพิมพ์)" autocomplete="off" autocapitalize="off">
-  <input id="code" placeholder="รหัส 6 หลักจากแชตในเกม" inputmode="numeric" maxlength="6" autocomplete="off">
-  <button id="go" class="primary">เข้าห้อง</button>
-  <small>รหัสจะขึ้นในแชตเกมตอนคุณเข้าโลก พิมพ์ /scriptevent voice:code เพื่อดูอีกครั้ง ควรใส่หูฟังเพื่อไม่ให้เสียงสะท้อน</small>
+<div id="v-gt" class="hide">
+  <div class="sec">
+    <b>ชื่อ Xbox ของคุณ</b>
+    <input id="gt" placeholder="ชื่อ Xbox (ตรงกับชื่อในเกม)" autocomplete="off" autocapitalize="off">
+    <button id="gtsave" class="primary">บันทึก</button>
+    <small>ใส่ครั้งเดียว แอปจะจำไว้ในเครื่องนี้ ควรใส่หูฟังเพื่อไม่ให้เสียงสะท้อน</small>
+  </div>
 </div>
+
+<div id="v-list" class="hide">
+  <div class="row"><b id="hi"></b><button id="gtedit" class="mini">เปลี่ยนชื่อ</button></div>
+  <div id="sl"></div>
+  <button id="addbtn" class="primary">+ เพิ่มเซิร์ฟเวอร์</button>
+</div>
+
+<div id="v-add" class="hide">
+  <div class="sec">
+    <b id="addtitle">เพิ่มเซิร์ฟเวอร์</b>
+    <input id="a-link" placeholder="ลิงก์เชิญจากเจ้าของเซิร์ฟ หรือรหัสห้อง" autocomplete="off" autocapitalize="off">
+    <input id="a-name" placeholder="ตั้งชื่อเซิร์ฟเวอร์ (ตั้งเองได้)" autocomplete="off">
+    <input id="a-code" placeholder="รหัส 6 หลักจากแชตในเกม" inputmode="numeric" maxlength="6" autocomplete="off">
+    <div class="two"><button id="a-cancel">ยกเลิก</button><button id="a-save" class="primary">บันทึก</button></div>
+    <small>รหัสขึ้นในแชตเกมตอนเข้าเซิร์ฟครั้งแรก ขอดูอีกครั้งด้วย /scriptevent voice:code รหัสนี้ใช้ตลอด ใส่ครั้งเดียว</small>
+  </div>
+</div>
+
+<!-- ช่องซ่อน: ให้ปุ่ม "ใส่รหัส" บนแถบแจ้งเตือนของแอปรุ่นเดิมยังใช้ได้ (ใส่รหัสให้เซิร์ฟล่าสุดแล้วเชื่อม) -->
+<input id="code" class="hide" tabindex="-1" aria-hidden="true"><button id="go" class="hide" tabindex="-1" aria-hidden="true"></button>
 
 <p id="st"></p>
 
 <div id="ctl" class="hide">
+  <div class="row"><b id="cur"></b></div>
   <div class="sec">
     <button id="mic" class="on">🎤 ไมค์: เปิด (กดเพื่อปิด)</button>
     <select id="mode"><option value="open">โหมดไมค์: เปิดตลอด</option><option value="ptt">โหมดไมค์: กดค้างเพื่อพูด</option></select>
@@ -59,7 +84,7 @@ small{color:var(--mut)}
     <div class="lab">ใครย่อตัว (sneak) อยู่จะเป็นเสียงกระซิบ ได้ยินแค่ราว 30% ของระยะ</div>
   </div>
   <div class="sec"><ul id="ls"></ul><div id="empty" class="lab">ยังไม่มีผู้เล่นคนอื่นในห้องเสียง</div></div>
-  <button id="leave">ออกจากห้อง</button>
+  <button id="leave">ตัดการเชื่อมต่อ</button>
   <p id="note" class="lab"></p>
 </div>
 
@@ -71,8 +96,13 @@ let ac,ws,mic,me="",roomId="",codeVal="",state={},peers={},rows={},chain=Promise
 let RANGE=32,muted=false,mode="open",pttDown=false,joined=false,want=false,wake=null,hiddenAt=0,localAn=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
-$("room").value=new URLSearchParams(location.search).get("room")||store.get("room")||"";
-$("name").value=store.get("name")||"";
+const J=k=>{try{return JSON.parse(store.get(k))}catch(e){return null}};
+let gt=(store.get("gt")||store.get("name")||"").trim(),servers=Array.isArray(J("servers"))?J("servers"):[],cur=null,editing=null;
+const saveS=()=>store.set("servers",JSON.stringify(servers));
+const VIEWS=["v-gt","v-list","v-add","ctl"];
+const show=v=>VIEWS.forEach(i=>$(i).classList.toggle("hide",i!==v));
+const qp=new URLSearchParams(location.search);let qRoom=(qp.get("room")||"").trim(),qSn=(qp.get("sn")||"").trim();
+let VOLS=J("vols")||{};
 RANGE=+store.get("range")||32;$("range").value=RANGE;$("rl").textContent=RANGE+" บล็อก";
 
 const status=(t,err)=>{$("st").textContent=t;$("st").className=err?"err":""};
@@ -106,7 +136,7 @@ async function reacquire(){
   }catch(e){$("note").textContent="เปิดไมค์ใหม่ไม่ได้ ตรวจสิทธิ์ไมค์ของเบราว์เซอร์"}
 }
 const micDead=()=>mic&&mic.getAudioTracks().every(t=>t.readyState==="ended");
-$("mic").onclick=()=>{if(micDead())return reacquire();muted=!muted;applyMic()};
+$("mic").onclick=()=>{if(micDead())return reacquire();muted=!muted;applyMic();report()};
 $("mode").onchange=()=>{mode=$("mode").value;pttDown=false;$("ptt").classList.toggle("hide",mode!=="ptt");applyMic()};
 const ptt=v=>{if(mode==="ptt"&&pttDown!==v){pttDown=v;applyMic()}};
 const pb=$("ptt");
@@ -116,7 +146,22 @@ pb.addEventListener("contextmenu",e=>e.preventDefault());
 addEventListener("keydown",e=>{if(e.code==="Space"&&mode==="ptt"&&!e.repeat&&!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)){e.preventDefault();ptt(true)}});
 addEventListener("keyup",e=>{if(e.code==="Space")ptt(false)});
 addEventListener("blur",()=>ptt(false));
-$("range").oninput=e=>{RANGE=+e.target.value;$("rl").textContent=RANGE+" บล็อก";store.set("range",RANGE)};
+const setRange=v=>{RANGE=Math.max(8,Math.min(64,Math.round(+v)||32));$("range").value=RANGE;$("rl").textContent=RANGE+" บล็อก";store.set("range",RANGE)};
+$("range").oninput=e=>{setRange(e.target.value);report()};
+/* ส่งการตั้งค่าปัจจุบันให้รีเลย์ (แอดออนในเกมอ่านไปแสดงในเมนู) */
+function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,range:RANGE,vols:VOLS}))}
+setInterval(report,2000);
+/* คำสั่งจากในเกม (ไอเทม/เมนู) */
+function onCmd(d){
+  if(d.op==="mute"&&typeof d.value==="boolean"){muted=d.value;applyMic()}
+  else if(d.op==="range")setRange(d.value);
+  else if(d.op==="vol"&&typeof d.target==="string"){
+    VOLS[d.target]=Math.max(0,Math.min(200,+d.value||0));store.set("vols",JSON.stringify(VOLS));
+    const p=peers[d.target];if(p&&p.vol)p.vol.gain.value=VOLS[d.target]/100;
+    const li=rows[d.target];if(li)li.querySelector("input").value=VOLS[d.target];
+  }
+  report();
+}
 
 /* ---------- เสียงของเพื่อน ---------- */
 function build(n,p,stream){
@@ -132,7 +177,8 @@ function build(n,p,stream){
   const li=document.createElement("li");
   li.innerHTML='<div class="row"><span class="nm"></span><span class="s"></span></div><input type="range" min="0" max="200" value="100" title="ระดับเสียงของคนนี้">';
   li.querySelector(".nm").textContent=n;
-  li.querySelector("input").oninput=e=>{vol.gain.value=e.target.value/100};
+  const sl=li.querySelector("input");sl.value=VOLS[n]!=null?VOLS[n]:100;vol.gain.value=sl.value/100;
+  sl.oninput=e=>{vol.gain.value=e.target.value/100;VOLS[n]=+e.target.value;store.set("vols",JSON.stringify(VOLS));report()};
   $("ls").appendChild(li);rows[n]=li;$("empty").classList.add("hide");
 }
 function connect(n,init){
@@ -170,7 +216,7 @@ const dropAll=()=>Object.keys(peers).forEach(drop);
 function update(){
   const P=state.players||{},m=P[me];
   if(!joined)return;
-  status(!state.fresh?"เกมยังไม่ส่งข้อมูลมา":m?"เชื่อมกับเกมแล้ว ("+me+")":"ไม่พบชื่อนี้ในเกมตอนนี้",!state.fresh||!m);
+  status(!state.fresh?"เกมยังไม่ส่งข้อมูลมา":m?"เชื่อมกับเกมแล้ว ("+me+")":"เชื่อมแล้ว รอคุณเข้าเกม ("+me+")",!state.fresh);
   if(m){const L=ac.listener;ramp(L.positionX,m.x);ramp(L.positionY,m.y+1.6);ramp(L.positionZ,m.z);ramp(L.forwardX,m.dx);ramp(L.forwardY,m.dy);ramp(L.forwardZ,m.dz);L.upX.value=0;L.upY.value=1;L.upZ.value=0}
   for(const n in peers){
     const p=peers[n],o=P[n],li=rows[n];if(!p.pan||!li)continue;
@@ -199,7 +245,7 @@ setInterval(()=>{
 },120);
 
 /* ---------- การเชื่อมต่อ ---------- */
-let lastErr="";
+let lastErr="",retry=0;
 function connectWS(){
   dropAll();lastErr="";
   const q="?room="+encodeURIComponent(roomId)+"&name="+encodeURIComponent(me)+"&code="+encodeURIComponent(codeVal);
@@ -208,22 +254,28 @@ function connectWS(){
   ws.onmessage=e=>{
     const d=JSON.parse(e.data);
     if(d.t==="peers"){
-      joined=true;$("join").classList.add("hide");$("ctl").classList.remove("hide");
+      joined=true;retry=0;if(d.name)me=d.name;
+      status("เชื่อมต่อห้องแล้ว รอข้อมูลจากเกม...");
       d.peers.forEach(n=>connect(n,true));
     }else if(d.t==="signal")chain=chain.then(()=>onSignal(d.from,d.data)).catch(()=>{});
     else if(d.t==="leave")drop(d.name);
     else if(d.t==="state"){state=d;update()}
+    else if(d.t==="cmd")onCmd(d);
     else if(d.t==="error")lastErr=d.why;
   };
   ws.onclose=e=>{
-    if(mine!==ws)return;
-    if(e.code>=4000){fatal(lastErr||"เข้าห้องไม่ได้ (รหัส "+e.code+")")}
-    else if(want){status("หลุดการเชื่อมต่อ กำลังต่อใหม่...",true);setTimeout(()=>want&&connectWS(),2000)}
+    if(mine!==ws||!want)return;
+    joined=false;
+    if(e.code===4004){ // เซิร์ฟเวอร์เกมยังไม่ออนไลน์/รีเลย์เพิ่งตื่น: รอแล้วลองใหม่เอง
+      status("รอเซิร์ฟเวอร์เกมออนไลน์... (จะต่อให้เองเมื่อพร้อม)");setTimeout(()=>want&&ws===mine&&connectWS(),4000);
+    }else if(e.code>=4000){fatal(lastErr||"เข้าห้องไม่ได้ (รหัส "+e.code+")")}
+    else{status("หลุดการเชื่อมต่อ กำลังต่อใหม่...",true);setTimeout(()=>want&&ws===mine&&connectWS(),2000)}
   };
 }
 function fatal(msg){
   want=false;joined=false;dropAll();
-  $("ctl").classList.add("hide");$("join").classList.remove("hide");$("go").disabled=false;
+  try{ws&&ws.close()}catch(e){}
+  show("v-list");renderList();
   status(msg,true);
 }
 async function wl(){try{if(navigator.wakeLock&&!wake)wake=await navigator.wakeLock.request("screen");if(wake)wake.onrelease=()=>{wake=null}}catch(e){}}
@@ -238,20 +290,81 @@ async function prep(){
 window.mcPrep=prep;
 ["pointerdown","touchstart","keydown"].forEach(ev=>document.addEventListener(ev,()=>{if(!ac||ac.state!=="running"||!mic)prep()},{passive:true}));
 setTimeout(prep,300);
-$("go").onclick=async()=>{
-  me=$("name").value.trim();roomId=$("room").value.trim();codeVal=$("code").value.trim();
-  if(!me||!roomId||!codeVal){status("กรอกรหัสห้อง ชื่อ และรหัส 6 หลักให้ครบ",true);return}
-  store.set("room",roomId);store.set("name",me);
-  $("go").disabled=true;status("กำลังเปิดไมค์...");
+function stopConn(){want=false;joined=false;try{ws&&ws.close()}catch(e){}dropAll()}
+async function startConn(sv){
+  stopConn();
+  cur=sv;store.set("last",sv.id);
+  me=gt;roomId=sv.room;codeVal=sv.code;
+  $("cur").textContent=sv.name;show("ctl");status("กำลังเปิดไมค์...");
   await prep();
-  if(!mic){fatal("เปิดไมค์ไม่ได้ ต้องอนุญาตไมค์ และเปิดผ่าน https (ถ้าอยู่ในเกม ให้แตะแจ้งเตือนเข้าแอปแล้วกดเข้าห้องอีกครั้ง)");return}
+  if(!mic){fatal("เปิดไมค์ไม่ได้ ต้องอนุญาตไมค์ (ตั้งค่า > แอป > Minecraft Voice > สิทธิ์) แล้วลองใหม่");return}
   if(!ac){fatal("เปิดระบบเสียงไม่ได้");return}
   status("กำลังเชื่อมต่อห้อง...");
   hookMic();applyMic();wl();want=true;connectWS();
   /* ถ้าระบบเสียงยังค้าง (ยังไม่มีการแตะ) จะปลุกใหม่ทุก 1 วินาที และตอนแตะ/กลับมาที่หน้า */
-  const kick=setInterval(()=>{if(ac.state==="running"){clearInterval(kick)}else{try{ac.resume()}catch(e){}}},1000);
+  const kick=setInterval(()=>{if(ac.state==="running"||!want){clearInterval(kick)}else{try{ac.resume()}catch(e){}}},1000);
+}
+$("leave").onclick=()=>{stopConn();show("v-list");renderList();status("ตัดการเชื่อมต่อแล้ว")};
+
+/* ---------- ชื่อ Xbox / รายการเซิร์ฟเวอร์ ---------- */
+function parseInvite(t){
+  t=(t||"").trim();let room=t,sn="";
+  if(/^https?:\/\//i.test(t)){try{const u=new URL(t);room=(u.searchParams.get("room")||"").trim();sn=(u.searchParams.get("sn")||"").trim()}catch(e){room=""}}
+  return{room,sn};
+}
+function renderList(){
+  $("hi").textContent="ผู้เล่น: "+gt;
+  const box=$("sl");box.innerHTML="";
+  if(!servers.length){const p=document.createElement("p");p.className="lab";p.textContent="ยังไม่มีเซิร์ฟเวอร์ กด \"+ เพิ่มเซิร์ฟเวอร์\" ด้านล่าง";box.appendChild(p)}
+  servers.forEach(sv=>{
+    const d=document.createElement("div");d.className="sec sv";
+    d.innerHTML='<div class="nm2"></div><small class="rm"></small><button class="primary cn">เชื่อม</button><div class="two"><button class="ed">แก้ไข</button><button class="dl">ลบ</button></div>';
+    d.querySelector(".nm2").textContent=sv.name;d.querySelector(".rm").textContent="ห้อง: "+sv.room;
+    d.querySelector(".cn").onclick=()=>startConn(sv);
+    d.querySelector(".ed").onclick=()=>openAdd(sv);
+    const dl=d.querySelector(".dl");let armed=false;
+    dl.onclick=()=>{if(!armed){armed=true;dl.textContent="แตะอีกครั้งเพื่อลบ";setTimeout(()=>{armed=false;dl.textContent="ลบ"},3000);return}servers=servers.filter(x=>x!==sv);saveS();renderList()};
+    box.appendChild(d);
+  });
+}
+function openAdd(sv){
+  editing=sv&&sv.id?sv:null;
+  $("addtitle").textContent=editing?"แก้ไขเซิร์ฟเวอร์":"เพิ่มเซิร์ฟเวอร์";
+  $("a-link").value=sv?sv.room:"";$("a-name").value=sv?sv.name:"";$("a-code").value=sv&&sv.code?sv.code:"";
+  show("v-add");status("");
+}
+function route(){
+  if(!gt){show("v-gt");return}
+  if(qRoom&&!servers.some(x=>x.room===qRoom)){const r=qRoom,n=qSn;qRoom="";qSn="";openAdd({room:r,name:n,code:""});return}
+  qRoom="";show("v-list");renderList();
+}
+$("gtsave").onclick=()=>{
+  const v=$("gt").value.trim();
+  if(!v){status("ใส่ชื่อ Xbox ก่อน",true);return}
+  gt=v;store.set("gt",gt);status("");route();
 };
-$("leave").onclick=()=>{want=false;try{ws.close()}catch(e){}fatal("ออกจากห้องแล้ว")};
+$("gtedit").onclick=()=>{$("gt").value=gt;show("v-gt")};
+$("addbtn").onclick=()=>openAdd(null);
+$("a-cancel").onclick=()=>{route();show("v-list");renderList();status("")};
+$("a-save").onclick=()=>{
+  const inv=parseInvite($("a-link").value),code=$("a-code").value.trim();
+  if(!inv.room){status("ใส่ลิงก์เชิญ หรือรหัสห้อง",true);return}
+  if(!/^\d{6}$/.test(code)){status("รหัสต้องเป็นตัวเลข 6 หลัก",true);return}
+  const name=$("a-name").value.trim()||inv.sn||inv.room;
+  let sv=editing||servers.find(x=>x.room===inv.room);
+  if(sv){sv.name=name;sv.room=inv.room;sv.code=code}
+  else{sv={id:Date.now().toString(36),name,room:inv.room,code};servers.push(sv)}
+  saveS();status("บันทึกแล้ว");show("v-list");renderList();
+};
+/* ช่องซ่อนสำหรับปุ่ม "ใส่รหัส" บนแถบแจ้งเตือนของแอปรุ่นเดิม */
+$("go").onclick=()=>{
+  const sv=servers.find(x=>x.id===store.get("last"))||servers[0];
+  if(!sv||!gt){status("เพิ่มชื่อ Xbox และเซิร์ฟเวอร์ในแอปก่อน",true);return}
+  const c=$("code").value.trim();
+  if(/^\d{6}$/.test(c)){sv.code=c;saveS()}
+  startConn(sv);
+};
+route();
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden){hiddenAt=Date.now();return}
   if(!ac)return;
