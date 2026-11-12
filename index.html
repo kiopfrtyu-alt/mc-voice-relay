@@ -86,6 +86,7 @@ b{font-weight:600}
   <div id="sl"></div>
   <button id="addbtn" class="primary">+ เพิ่มเซิร์ฟเวอร์</button>
   <button id="testbtn">🎧 ทดสอบ/ปรับไมค์</button>
+  <button id="bubbletog" class="tg hide">ปุ่มลอยบนหน้าจอ: ปิด</button>
   <div class="sec tip"><b>ใช้ในเกม</b>
     <div class="lab">ไอเทมไมค์: แตะ = เปิด/ปิดไมค์ · ย่อตัว (sneak) + แตะ = เมนูปรับเสียง<br>เมนูมี: ระยะที่คนอื่นได้ยินคุณ, เสียงรายคน และไมค์ประกาศทั่วโลก (เฉพาะ OP)</div>
   </div>
@@ -109,6 +110,8 @@ b{font-weight:600}
     <button id="t-ns" class="tg on">ตัดเสียงรบกวน: เปิด</button>
     <button id="t-agc" class="tg on">ปรับระดับเสียงอัตโนมัติ: เปิด</button>
     <button id="t-mon" class="tg">ฟังเสียงตัวเอง: ปิด</button>
+    <button id="t-echo" class="tg">ฟังเสียงสะท้อนหน่วง 1.2 วิ (30 วิ): ปิด</button>
+    <button id="t-beep">🔔 ทดสอบเสียงบี๊บ</button>
     <div class="lab">"ฟังเสียงตัวเอง" จะได้ยินเสียงของคุณกลับมาทันที เหมือนหน้าทดสอบไมค์ใน Discord ควรใส่หูฟัง ไม่งั้นเสียงจะหอน</div>
   </div>
   <button id="t-back" class="primary">กลับ</button>
@@ -160,7 +163,7 @@ const $=id=>document.getElementById(id);
 const ICE={iceServers:[{urls:"stun:stun.l.google.com:19302"}]};
 const WHISPER=0.3;
 let ac,ws,mic,me="",roomId="",codeVal="",state={},peers={},rows={},chain=Promise.resolve();
-let muted=false,mode="open",pttDown=false,joined=false,want=false,wake=null,hiddenAt=0,mc=null,ME={admin:false,pub:false},MON=false;
+let ECHO=false,echoT=null,muted=false,mode="open",pttDown=false,joined=false,want=false,wake=null,hiddenAt=0,mc=null,ME={admin:false,pub:false},MON=false;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const J=k=>{try{return JSON.parse(store.get(k))}catch(e){return null}};
@@ -200,14 +203,15 @@ async function ensureChain(){
   if(!ac||!mic)return false;
   if(!mc){
     const wk=await loadWk();
-    const gain=ac.createGain(),dest=ac.createMediaStreamDestination(),an=ac.createAnalyser(),mon=ac.createGain();
-    an.fftSize=512;mon.gain.value=0;
+    const gain=ac.createGain(),dest=ac.createMediaStreamDestination(),an=ac.createAnalyser(),mon=ac.createGain(),echo=ac.createGain(),dly=ac.createDelay(2);
+    an.fftSize=512;mon.gain.value=0;echo.gain.value=0;dly.delayTime.value=1.2;
     let gate=null;
     if(wk){try{gate=new AudioWorkletNode(ac,"mc-gate",{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]})}catch(e){gate=null}}
     gain.connect(an);
     if(gate){gain.connect(gate);gate.connect(dest);gate.connect(mon)}else{gain.connect(dest);gain.connect(mon)}
     mon.connect(ac.destination);
-    mc={gain,gate,dest,an,mon,src:null,srcStream:null,out:dest.stream};
+    (gate||gain).connect(echo);echo.connect(dly);dly.connect(ac.destination);
+    mc={gain,gate,dest,an,mon,echo,src:null,srcStream:null,out:dest.stream};
   }
   if(mc.srcStream!==mic){
     if(mc.src)try{mc.src.disconnect()}catch(e){}
@@ -223,6 +227,7 @@ function applyChain(){
   mc.gain.gain.value=GAIN/100;
   if(mc.gate)mc.gate.port.postMessage({t:GATE/100*0.15});
   mc.mon.gain.value=MON?1:0;
+  mc.echo.gain.value=ECHO?1:0;
 }
 function applyMic(){
   const on=!muted&&(mode!=="ptt"||pttDown);
@@ -264,12 +269,51 @@ addEventListener("blur",()=>ptt(false));
 /* ส่งการตั้งค่าปัจจุบันให้รีเลย์ (แอดออนในเกมอ่านไปแสดงในเมนู) */
 const setSpeak=v=>{SPEAK=Math.max(2,Math.min(64,Math.round(+v)||32));$("speak").value=SPEAK;$("sp").textContent=SPEAK+" บล็อก";store.set("speak",SPEAK)};
 $("speak").oninput=e=>{setSpeak(e.target.value);report()};
-function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,speak:SPEAK,vols:VOLS}))}
-setInterval(report,2000);
+function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,speak:SPEAK,vols:VOLS,ok:aliveOk()}))}
+const aliveOk=()=>!!(ac&&ac.state==="running"&&mic&&!micDead());
+/* ทดสอบเสียงจากในเกม: บี๊บ 3 ครั้ง (ได้ยิน = ระบบเสียงยังไม่หลุด) */
+function beep(){
+  try{
+    if(ac.state!=="running")ac.resume();
+    const t0=ac.currentTime+0.05;
+    for(let i=0;i<3;i++){
+      const o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.value=i===2?1175:880;
+      const t=t0+i*0.35;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.35,t+0.02);g.gain.linearRampToValueAtTime(0,t+0.25);
+      o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+0.3);
+    }
+  }catch(e){}
+}
+/* ฟังเสียงตัวเองหน่วง 1.2 วินาที 30 วินาที แล้วปิดเอง (ควรใส่หูฟัง) */
+function setEcho(v){
+  ECHO=!!v;applyChain();clearTimeout(echoT);
+  if(ECHO)echoT=setTimeout(()=>{ECHO=false;applyChain();if(typeof syncTest==="function")syncTest()},30000);
+  if(typeof syncTest==="function")syncTest();
+}
+/* ปุ่มลอยบน Android (ถ้ามี) */
+const AB=window.AndroidBubble||null;
+function bubbleSync(){if(AB){try{AB.setState(joined?(muted?"muted":(aliveOk()?"on":"warn")):"off")}catch(e){}}}
+function renderBubble(){
+  const b=$("bubbletog");if(!b)return;
+  if(!AB){b.classList.add("hide");return}
+  b.classList.remove("hide");
+  let on=false;try{on=AB.isEnabled()}catch(e){}
+  b.textContent="ปุ่มลอยบนหน้าจอ: "+(on?"เปิด":"ปิด");b.className=on?"tg on":"tg";
+}
+/* จังหวะรายงานสถานะใช้ Worker เพราะไม่ถูกหน่วงเวลาตอนหน้าเว็บอยู่เบื้องหลัง */
+function startTick(){
+  const work=()=>{report();bubbleSync();if(ac&&ac.state!=="running"&&want){try{ac.resume()}catch(e){}}};
+  try{
+    const w=new Worker(URL.createObjectURL(new Blob(["setInterval(function(){postMessage(1)},2000)"],{type:"application/javascript"})));
+    w.onmessage=work;
+  }catch(e){setInterval(work,2000)}
+}
+startTick();
 /* คำสั่งจากในเกม (ไอเทม/เมนู) */
 function onCmd(d){
   if(d.op==="mute"&&typeof d.value==="boolean"){muted=d.value;applyMic()}
   else if(d.op==="speak")setSpeak(d.value);
+  else if(d.op==="test")beep();
+  else if(d.op==="echo")setEcho(d.value===true);
   else if(d.op==="vol"&&typeof d.target==="string"){
     VOLS[d.target]=Math.max(0,Math.min(200,+d.value||0));store.set("vols",JSON.stringify(VOLS));
     const p=peers[d.target];if(p&&p.vol)p.vol.gain.value=VOLS[d.target]/100;
@@ -509,7 +553,7 @@ function syncTest(){
   $("t-gain").value=GAIN;$("t-gv").textContent=GAIN+"%";
   $("t-gate").value=GATE;$("t-tv").textContent=GATE?GATE+"":"ปิด";$("tthr").style.left=Math.min(100,GATE*0.6)+"%";
   $("t-nogate").classList.toggle("hide",!mc||!!mc.gate);
-  tgSet("t-ns",NS,"ตัดเสียงรบกวน");tgSet("t-agc",AGC,"ปรับระดับเสียงอัตโนมัติ");tgSet("t-mon",MON,"ฟังเสียงตัวเอง");
+  tgSet("t-ns",NS,"ตัดเสียงรบกวน");tgSet("t-agc",AGC,"ปรับระดับเสียงอัตโนมัติ");tgSet("t-mon",MON,"ฟังเสียงตัวเอง");tgSet("t-echo",ECHO,"ฟังเสียงสะท้อนหน่วง 1.2 วิ (30 วิ)");
 }
 async function openTest(from){
   prevView=from;show("v-test");syncTest();status("กำลังเปิดไมค์...");
@@ -528,9 +572,14 @@ $("t-gate").oninput=e=>{GATE=+e.target.value;store.set("gate",GATE);syncTest();a
 $("t-ns").onclick=async()=>{NS=!NS;store.set("ns",NS?"1":"0");syncTest();await refreshMic()};
 $("t-agc").onclick=async()=>{AGC=!AGC;store.set("agc",AGC?"1":"0");syncTest();await refreshMic()};
 $("t-mon").onclick=()=>{MON=!MON;applyChain();syncTest()};
+$("t-echo").onclick=()=>setEcho(!ECHO);
+$("t-beep").onclick=()=>beep();
 $("pubbtn").onclick=()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:"pub",value:!ME.pub}))};
+$("bubbletog").onclick=()=>{if(!AB)return;try{AB.setEnabled(!AB.isEnabled())}catch(e){}renderBubble()};
+renderBubble();
 route();
 document.addEventListener("visibilitychange",()=>{
+  renderBubble();
   if(document.hidden){hiddenAt=Date.now();return}
   if(!ac)return;
   ac.resume();wl();

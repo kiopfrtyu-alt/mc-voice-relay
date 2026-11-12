@@ -70,13 +70,22 @@ const server = http.createServer((req, res) => {
             if (c.op === "mute" && typeof c.value === "boolean") send(ws, { t: "cmd", op: "mute", value: c.value });
             else if (c.op === "range" && isFinite(c.value)) send(ws, { t: "cmd", op: "range", value: Math.max(8, Math.min(64, +c.value)) });
             else if (c.op === "speak" && isFinite(c.value)) send(ws, { t: "cmd", op: "speak", value: Math.max(2, Math.min(64, +c.value)) });
+            else if (c.op === "test") send(ws, { t: "cmd", op: "test" });
+            else if (c.op === "echo" && typeof c.value === "boolean") send(ws, { t: "cmd", op: "echo", value: c.value });
             else if (c.op === "pub" && typeof c.value === "boolean") { if (c.value && r.admins.has(c.name)) r.pub.add(c.name); else r.pub.delete(c.name); }
             else if (c.op === "vol" && typeof c.target === "string" && isFinite(c.value)) send(ws, { t: "cmd", op: "vol", target: c.target.slice(0, 32), value: Math.max(0, Math.min(200, +c.value)) });
           }
         }
         // ตอบกลับสถานะการตั้งค่าของผู้เล่นที่เชื่อมแอปอยู่ (แอดออนใช้โชว์ในเมนู) ไม่มีรหัสในนี้
         const settings = {};
-        for (const n of r.clients.keys()) settings[n] = Object.assign({ muted: false, range: 32, speak: 32, vols: {} }, r.settings.get(n), { pub: r.pub.has(n), admin: r.admins.has(n) });
+        for (const n of r.clients.keys()) {
+          const st = r.settings.get(n);
+          // alive = แอปรายงานว่าระบบเสียงยังทำงาน และยังส่งสัญญาณชีพมาในช่วง 9 วินาทีล่าสุด (ยังไม่เคยรายงาน = ถือว่าปกติ)
+          const alive = st && st.beat ? (st.ok && Date.now() - st.beat < 9000) : true;
+          const o = Object.assign({ muted: false, range: 32, speak: 32, vols: {} }, st, { pub: r.pub.has(n), admin: r.admins.has(n), alive });
+          delete o.ok; delete o.beat;
+          settings[n] = o;
+        }
         res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ settings }));
       } catch (e) { res.writeHead(400); res.end(); }
     });
@@ -125,7 +134,7 @@ wss.on("connection", (ws, req) => {
       else if (d.t === "set") {
         const vols = {};
         if (d.vols && typeof d.vols === "object") for (const [k, v] of Object.entries(d.vols).slice(0, 100)) if (isFinite(v)) vols[String(k).slice(0, 32)] = Math.max(0, Math.min(200, +v));
-        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols });
+        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols, ok: d.ok !== false, beat: Date.now() });
       } else if (d.t === "pub" && typeof d.value === "boolean") {
         // เปิด/ปิดไมค์ประกาศจากแอป: เฉพาะผู้มีสิทธิ์ (รายชื่อมาจากแอดออน)
         if (d.value && r.admins.has(name)) r.pub.add(name); else r.pub.delete(name);
