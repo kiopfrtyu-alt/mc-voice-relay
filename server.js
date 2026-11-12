@@ -70,6 +70,9 @@ const server = http.createServer((req, res) => {
             if (c.op === "mute" && typeof c.value === "boolean") send(ws, { t: "cmd", op: "mute", value: c.value });
             else if (c.op === "range" && isFinite(c.value)) send(ws, { t: "cmd", op: "range", value: Math.max(8, Math.min(64, +c.value)) });
             else if (c.op === "speak" && isFinite(c.value)) send(ws, { t: "cmd", op: "speak", value: Math.max(2, Math.min(64, +c.value)) });
+            else if (["ns", "agc", "spk", "mon"].includes(c.op) && typeof c.value === "boolean") send(ws, { t: "cmd", op: c.op, value: c.value });
+            else if (c.op === "gain" && isFinite(c.value)) send(ws, { t: "cmd", op: "gain", value: Math.max(0, Math.min(200, +c.value)) });
+            else if (c.op === "gate" && isFinite(c.value)) send(ws, { t: "cmd", op: "gate", value: Math.max(0, Math.min(100, +c.value)) });
             else if (c.op === "test") send(ws, { t: "cmd", op: "test" });
             else if (c.op === "echo" && typeof c.value === "boolean") send(ws, { t: "cmd", op: "echo", value: c.value });
             else if (c.op === "pub" && typeof c.value === "boolean") { if (c.value && r.admins.has(c.name)) r.pub.add(c.name); else r.pub.delete(c.name); }
@@ -135,7 +138,7 @@ wss.on("connection", (ws, req) => {
       else if (d.t === "set") {
         const vols = {};
         if (d.vols && typeof d.vols === "object") for (const [k, v] of Object.entries(d.vols).slice(0, 100)) if (isFinite(v)) vols[String(k).slice(0, 32)] = Math.max(0, Math.min(200, +v));
-        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols, ok: d.ok !== false, why: String(d.why || "").slice(0, 24), beat: Date.now() });
+        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols, ns: d.ns !== false, agc: d.agc !== false, gain: d.gain == null ? 100 : Math.max(0, Math.min(200, +d.gain || 0)), gate: Math.max(0, Math.min(100, +d.gate || 0)), spk: d.spk === true, mon: d.mon === true, ok: d.ok !== false, why: String(d.why || "").slice(0, 24), beat: Date.now() });
       } else if (d.t === "pub" && typeof d.value === "boolean") {
         // เปิด/ปิดไมค์ประกาศจากแอป: เฉพาะผู้มีสิทธิ์ (รายชื่อมาจากแอดออน)
         if (d.value && r.admins.has(name)) r.pub.add(name); else r.pub.delete(name);
