@@ -114,6 +114,13 @@ b{font-weight:600}
     <button id="t-beep">🔔 ทดสอบเสียงบี๊บ</button>
     <div class="lab">"ฟังเสียงตัวเอง" จะได้ยินเสียงของคุณกลับมาทันที เหมือนหน้าทดสอบไมค์ใน Discord ควรใส่หูฟัง ไม่งั้นเสียงจะหอน</div>
   </div>
+  <div class="sec"><b>วินิจฉัยเสียง</b>
+    <button id="t-dg">📋 แสดงผลวินิจฉัย</button>
+    <button id="t-dgc">คัดลอกผล</button>
+    <button id="t-dgx">ล้างบันทึก</button>
+    <pre id="dg-out" style="white-space:pre-wrap;word-break:break-word;font-size:11px;user-select:text;-webkit-user-select:text;margin:6px 0 0"></pre>
+    <div class="lab">วิธีใช้: เชื่อมห้อง เข้าเกม คุยกับเพื่อน 3-5 นาที แล้วกลับมากด "แสดงผลวินิจฉัย" แล้วส่งภาพหน้าจอให้ผู้ช่วย แอปเก็บสถิติเองทุก 2 วินาที ไม่ส่งออกไปที่ไหน</div>
+  </div>
   <button id="t-back" class="primary">กลับ</button>
 </div>
 
@@ -269,8 +276,10 @@ addEventListener("blur",()=>ptt(false));
 /* ส่งการตั้งค่าปัจจุบันให้รีเลย์ (แอดออนในเกมอ่านไปแสดงในเมนู) */
 const setSpeak=v=>{SPEAK=Math.max(2,Math.min(64,Math.round(+v)||32));$("speak").value=SPEAK;$("sp").textContent=SPEAK+" บล็อก";store.set("speak",SPEAK)};
 $("speak").oninput=e=>{setSpeak(e.target.value);report()};
-function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,speak:SPEAK,vols:VOLS,ok:aliveOk()}))}
-const aliveOk=()=>!!(ac&&ac.state==="running"&&mic&&!micDead());
+function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,speak:SPEAK,vols:VOLS,ok:aliveOk(),why:aliveWhy()}))}
+const aliveWhy=()=>!ac?"no-ctx":ac.state!=="running"?"ctx-"+ac.state:!mic?"no-mic":micDead()?"mic-ended":"";
+const aliveOk=()=>aliveWhy()==="";
+let lastRe=0;
 /* ทดสอบเสียงจากในเกม: บี๊บ 3 ครั้ง (ได้ยิน = ระบบเสียงยังไม่หลุด) */
 function beep(){
   try{
@@ -299,9 +308,74 @@ function renderBubble(){
   let on=false;try{on=AB.isEnabled()}catch(e){}
   b.textContent="ปุ่มลอยบนหน้าจอ: "+(on?"เปิด":"ปิด");b.className=on?"tg on":"tg";
 }
+/* ===== วินิจฉัยเสียง: เก็บสถิติทุก 2 วินาที (ทำงานต่อแม้อยู่ในเกม) แล้วสรุปให้ดูในหน้าทดสอบ ===== */
+const DG={log:[],prev:{},evs:[],lastTick:0};
+const dgEv=(e)=>{DG.evs.push({t:Date.now(),e});if(DG.evs.length>100)DG.evs.shift()};
+document.addEventListener("visibilitychange",()=>dgEv("หน้าเว็บ "+document.visibilityState));
+async function dgSample(lag){
+  const s={t:Date.now(),lag,vis:document.visibilityState,ac:ac?ac.state:"-",out:ac&&ac.outputLatency!=null?Math.round(ac.outputLatency*1000):null,base:ac?Math.round(ac.baseLatency*1000):null,peers:{}};
+  try{const tr=mic&&mic.getAudioTracks()[0];if(tr){const st=tr.getSettings();s.aec=st.echoCancellation;s.ns=st.noiseSuppression;s.agc=st.autoGainControl;s.trk=tr.readyState+(tr.muted?"+muted":"")}}catch(e){}
+  for(const n in peers){
+    const p=peers[n];if(!p.pc)continue;
+    try{
+      const rep=await p.pc.getStats(),pr=DG.prev[n],cur={},o={},cands={};let pair=null;
+      rep.forEach(r=>{
+        if(r.type==="inbound-rtp"&&r.kind==="audio"){
+          cur.rec=r.packetsReceived||0;cur.lost=r.packetsLost||0;cur.con=r.concealedSamples||0;cur.tot=r.totalSamplesReceived||0;
+          cur.ins=r.insertedSamplesForDeceleration||0;cur.rem=r.removedSamplesForAcceleration||0;
+          if(r.jitter!=null)o.jit=Math.round(r.jitter*1000);
+          if(r.jitterBufferEmittedCount)o.jb=Math.round(1000*(r.jitterBufferDelay||0)/r.jitterBufferEmittedCount);
+        }else if(r.type==="candidate-pair"&&r.currentRoundTripTime!=null&&(r.nominated||r.state==="succeeded")){pair=r}
+        else if(r.type==="local-candidate"||r.type==="remote-candidate")cands[r.id]=r;
+        else if(r.type==="media-source"&&r.kind==="audio"){
+          if(r.echoReturnLoss!=null)s.erl=Math.round(r.echoReturnLoss);
+          if(r.echoReturnLossEnhancement!=null)s.erle=Math.round(r.echoReturnLossEnhancement);
+        }
+      });
+      if(pair){o.rtt=Math.round(pair.currentRoundTripTime*1000);const l=cands[pair.localCandidateId],m=cands[pair.remoteCandidateId];o.path=(l?l.candidateType:"?")+"/"+(m?m.candidateType:"?")}
+      const d=(k)=>pr?Math.max(0,(cur[k]||0)-(pr[k]||0)):0;
+      o.dLost=d("lost");o.dRec=d("rec");o.dCon=d("con");o.dTot=d("tot");o.dIns=d("ins");o.dRem=d("rem");
+      DG.prev[n]=cur;s.peers[n]=o;
+    }catch(e){}
+  }
+  DG.log.push(s);if(DG.log.length>200)DG.log.shift();
+}
+function dgSummary(){
+  const L=DG.log,out=[];
+  const avg=(a)=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+  const pct=(a,p)=>{if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y);return b[Math.min(b.length-1,Math.floor(b.length*p))]};
+  const r1=(x)=>Math.round(x*10)/10;
+  out.push("เครื่อง: "+navigator.userAgent.replace(/^Mozilla\/5.0 /,"").slice(0,110));
+  out.push("ข้อมูล "+L.length+" ครั้ง (~"+r1(L.length*2/60)+" นาที)");
+  if(!L.length)return out.join("\n")+"\nยังไม่มีข้อมูล: เชื่อมห้องแล้วรอสัก 1 นาที";
+  const last=L[L.length-1];
+  out.push("\n[ไมค์ ค่าจริงที่เครื่องรายงาน]\nตัดเสียงสะท้อน="+last.aec+"  ตัดรบกวน="+last.ns+"  AGC="+last.agc+"  แทร็ก="+last.trk);
+  const ers=L.filter(x=>x.erl!=null).map(x=>x.erl),erles=L.filter(x=>x.erle!=null).map(x=>x.erle);
+  out.push("ERL(เสียงที่ลำโพงเข้าไมค์ dB)="+(ers.length?r1(avg(ers)):"ไม่มีค่า")+"  ERLE(ที่ตัดได้ dB)="+(erles.length?r1(avg(erles)):"ไม่มีค่า"));
+  const acs={};L.forEach(x=>acs[x.ac]=(acs[x.ac]||0)+1);
+  out.push("\n[ระบบเสียง] สถานะ: "+Object.entries(acs).map(([k,v])=>k+"×"+v).join(", "));
+  const outs=L.filter(x=>x.out!=null).map(x=>x.out);
+  out.push("ความหน่วงขาออก(ms): เฉลี่ย "+r1(avg(outs))+" สูงสุด "+(outs.length?Math.max(...outs):"-")+"  base="+last.base);
+  const hid=L.filter(x=>x.vis!=="visible").length;
+  out.push("หน้าเว็บถูกซ่อน: "+hid+" จาก "+L.length+" ครั้ง");
+  const lags=L.map(x=>x.lag);
+  out.push("\n[ตัวเครื่องหน่วง] (เวลาที่หน้าเว็บตอบสนองช้า ms)\nเฉลี่ย "+r1(avg(lags))+"  p95 "+pct(lags,0.95)+"  สูงสุด "+Math.max(...lags)+"  ช้าเกิน 300ms: "+lags.filter(x=>x>300).length+" ครั้ง, เกิน 1000ms: "+lags.filter(x=>x>1000).length+" ครั้ง");
+  for(const n of Object.keys(last.peers)){
+    const ps=L.map(x=>x.peers[n]).filter(Boolean);if(!ps.length)continue;
+    const sum=(k)=>ps.reduce((x,y)=>x+(y[k]||0),0);
+    const jit=ps.filter(x=>x.jit!=null).map(x=>x.jit),rtt=ps.filter(x=>x.rtt!=null).map(x=>x.rtt),jb=ps.filter(x=>x.jb!=null).map(x=>x.jb);
+    const tot=sum("dRec")+sum("dLost");
+    out.push("\n[เพื่อน: "+n+"] เส้นทาง "+(last.peers[n].path||"?"));
+    out.push("แพ็กเก็ตหาย "+sum("dLost")+"/"+tot+" ("+r1(tot?100*sum("dLost")/tot:0)+"%)  RTT เฉลี่ย "+r1(avg(rtt))+" สูงสุด "+(rtt.length?Math.max(...rtt):"-")+" ms");
+    out.push("jitter เฉลี่ย "+r1(avg(jit))+" สูงสุด "+(jit.length?Math.max(...jit):"-")+" ms  บัฟเฟอร์ "+r1(avg(jb))+" ms");
+    out.push("เสียงที่ระบบเดาแทน(สะดุด) "+r1(sum("dTot")?100*sum("dCon")/sum("dTot"):0)+"%  ยืด/บีบเสียง "+sum("dIns")+"/"+sum("dRem")+" ตัวอย่าง");
+  }
+  if(DG.evs.length){out.push("\n[เหตุการณ์ล่าสุด]");DG.evs.slice(-12).forEach(e=>out.push(new Date(e.t).toLocaleTimeString("th-TH")+" "+e.e))}
+  return out.join("\n");
+}
 /* จังหวะรายงานสถานะใช้ Worker เพราะไม่ถูกหน่วงเวลาตอนหน้าเว็บอยู่เบื้องหลัง */
 function startTick(){
-  const work=()=>{report();bubbleSync();if(ac&&ac.state!=="running"&&want){try{ac.resume()}catch(e){}}};
+  const work=()=>{const nw=Date.now();const lag=DG.lastTick?Math.max(0,nw-DG.lastTick-2000):0;DG.lastTick=nw;if(joined)dgSample(lag);if(joined&&micDead()&&Date.now()-lastRe>5000){lastRe=Date.now();try{reacquire()}catch(e){}}report();bubbleSync();if(ac&&ac.state!=="running"&&want){try{ac.resume()}catch(e){}}};
   try{
     const w=new Worker(URL.createObjectURL(new Blob(["setInterval(function(){postMessage(1)},2000)"],{type:"application/javascript"})));
     w.onmessage=work;
@@ -457,7 +531,7 @@ function keepAlive(){
     silent=ac.createOscillator();const g=ac.createGain();g.gain.value=0.00002;silent.frequency.value=30;
     silent.connect(g);g.connect(ac.destination);silent.start();
   }catch(e){}
-  ac.onstatechange=()=>{if(ac.state!=="running"&&want){try{ac.resume()}catch(e){}}};
+  ac.onstatechange=()=>{dgEv("ระบบเสียง "+ac.state);if(ac.state!=="running"&&want){try{ac.resume()}catch(e){}}};
   setInterval(()=>{if(ac&&ac.state!=="running"&&want){try{ac.resume()}catch(e){}}for(const n in peers){const a=peers[n].audio;if(a&&a.paused)a.play().catch(()=>{})}},1000);
 }
 async function prep(){
@@ -574,6 +648,9 @@ $("t-agc").onclick=async()=>{AGC=!AGC;store.set("agc",AGC?"1":"0");syncTest();aw
 $("t-mon").onclick=()=>{MON=!MON;applyChain();syncTest()};
 $("t-echo").onclick=()=>setEcho(!ECHO);
 $("t-beep").onclick=()=>beep();
+$("t-dg").onclick=()=>{$("dg-out").textContent=dgSummary()};
+$("t-dgc").onclick=async()=>{const t=dgSummary();$("dg-out").textContent=t;try{await navigator.clipboard.writeText(t);status("คัดลอกแล้ว")}catch(e){const r=document.createRange();r.selectNodeContents($("dg-out"));const sl=getSelection();sl.removeAllRanges();sl.addRange(r);status("กดค้างที่ข้อความเพื่อคัดลอก")}};
+$("t-dgx").onclick=()=>{DG.log.length=0;DG.evs.length=0;DG.prev={};$("dg-out").textContent="ล้างแล้ว"};
 $("pubbtn").onclick=()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:"pub",value:!ME.pub}))};
 $("bubbletog").onclick=()=>{if(!AB)return;try{AB.setEnabled(!AB.isEnabled())}catch(e){}renderBubble()};
 renderBubble();

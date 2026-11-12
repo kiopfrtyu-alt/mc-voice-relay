@@ -83,6 +83,7 @@ const server = http.createServer((req, res) => {
           // alive = แอปรายงานว่าระบบเสียงยังทำงาน และยังส่งสัญญาณชีพมาในช่วง 9 วินาทีล่าสุด (ยังไม่เคยรายงาน = ถือว่าปกติ)
           const alive = st && st.beat ? (st.ok && Date.now() - st.beat < 9000) : true;
           const o = Object.assign({ muted: false, range: 32, speak: 32, vols: {} }, st, { pub: r.pub.has(n), admin: r.admins.has(n), alive });
+          o.why = alive ? "" : (st && st.beat && Date.now() - st.beat >= 9000 ? "no-beat" : (st && st.why) || "");
           delete o.ok; delete o.beat;
           settings[n] = o;
         }
@@ -134,7 +135,7 @@ wss.on("connection", (ws, req) => {
       else if (d.t === "set") {
         const vols = {};
         if (d.vols && typeof d.vols === "object") for (const [k, v] of Object.entries(d.vols).slice(0, 100)) if (isFinite(v)) vols[String(k).slice(0, 32)] = Math.max(0, Math.min(200, +v));
-        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols, ok: d.ok !== false, beat: Date.now() });
+        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols, ok: d.ok !== false, why: String(d.why || "").slice(0, 24), beat: Date.now() });
       } else if (d.t === "pub" && typeof d.value === "boolean") {
         // เปิด/ปิดไมค์ประกาศจากแอป: เฉพาะผู้มีสิทธิ์ (รายชื่อมาจากแอดออน)
         if (d.value && r.admins.has(name)) r.pub.add(name); else r.pub.delete(name);
