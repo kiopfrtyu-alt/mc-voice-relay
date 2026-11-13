@@ -172,7 +172,7 @@ b{font-weight:600}
 </div>
 
 <script>
-const WEB_VER="2026-11-13.1";
+const WEB_VER="2026-11-13.2";
 const $=id=>document.getElementById(id);
 /* รายงานข้อผิดพลาด: เก็บไว้ดูในหน้าวินิจฉัย และส่งให้รีเลย์ (ขึ้นแจ้งในเกม/บันทึกของ Render) */
 const ERRS=[];let errSent=0;
@@ -508,7 +508,7 @@ function update(){
   if(!joined)return;
   status(!state.fresh?"เกมยังไม่ส่งข้อมูลมา":m?"เชื่อมกับเกมแล้ว ("+me+")":"เชื่อมแล้ว รอคุณเข้าเกม ("+me+")",!state.fresh);
   if(m){const L=ac.listener;ramp(L.positionX,m.x);ramp(L.positionY,m.y+1.6);ramp(L.positionZ,m.z);ramp(L.forwardX,m.dx);ramp(L.forwardY,m.dy);ramp(L.forwardZ,m.dz);L.upX.value=0;L.upY.value=1;L.upZ.value=0}
-  const SP=state.speak||{},PB=state.pub||{};
+  const SP=state.speak||{},PB=state.pub||{},CALL=state.calls||{};
   for(const n in peers){
     const p=peers[n],o=P[n],li=rows[n];if(!p.pan||!li)continue;
     const s=li.querySelector(".s");
@@ -519,20 +519,30 @@ function update(){
       direct(n,p,1);
       s.textContent=p.state==="failed"?"เชื่อมต่อเสียงไม่ได้ (เครือข่ายอาจต้องใช้ TURN)":"📢 ประกาศทั่วโลก";continue;
     }
-    const off=!m||!o||m.dim!==o.dim;
+    // สายโทรศัพท์: คู่สายได้ยินกันเต็มเสียงทุกที่ คนอื่นได้ยินเสียงผู้พูดออกจากเครื่องของปลายสายด้วย (ลำโพง)
+    const T=CALL[n],TP=T&&P[T];
+    if(T&&T===me&&m){
+      p.pan.maxDistance=1e6;ramp(p.pan.positionX,m.x);ramp(p.pan.positionY,m.y+1.6);ramp(p.pan.positionZ,m.z);
+      ramp(p.dry.gain,1);ramp(p.lp.frequency,20000);ramp(p.wet.gain,0);direct(n,p,1);
+      s.textContent=p.state==="failed"?"เชื่อมต่อเสียงไม่ได้ (เครือข่ายอาจต้องใช้ TURN)":"📞 กำลังโทรอยู่";continue;
+    }
+    let src=o;
+    if(TP&&m&&TP.dim===m.dim&&(!o||o.dim!==m.dim||Math.hypot(m.x-TP.x,m.y-TP.y,m.z-TP.z)<Math.hypot(m.x-o.x,m.y-o.y,m.z-o.z)))src=TP;
+    const off=!m||!src||m.dim!==src.dim;
     if(off){ramp(p.dry.gain,0);ramp(p.wet.gain,0);direct(n,p,0);s.textContent=!o?"ไม่อยู่ในเกม":"คนละมิติ";continue}
-    const eff=(SP[n]||32)*(o.sneak?WHISPER:1),d=Math.hypot(m.x-o.x,m.y-o.y,m.z-o.z);
+    const eff=(SP[n]||32)*((o&&o.sneak)?WHISPER:1),d=Math.hypot(m.x-src.x,m.y-src.y,m.z-src.z);
     p.pan.maxDistance=Math.max(eff,2);
-    ramp(p.pan.positionX,o.x);ramp(p.pan.positionY,o.y+1.6);ramp(p.pan.positionZ,o.z);
+    ramp(p.pan.positionX,src.x);ramp(p.pan.positionY,src.y+1.6);ramp(p.pan.positionZ,src.z);
     ramp(p.dry.gain,1);
-    ramp(p.lp.frequency,(m.water||o.water)?500:20000);
-    ramp(p.wet.gain,(m.covered&&o.covered)?0.5:0);
+    ramp(p.lp.frequency,(m.water||src.water)?500:20000);
+    ramp(p.wet.gain,(m.covered&&src.covered)?0.5:0);
     direct(n,p,Math.max(0,Math.min(1,(eff-d)/Math.max(eff-1,1))));
     let t=d.toFixed(0)+" บล็อก";
     if(d>=eff)t="ไกลเกินไป ("+t+")";
-    if(o.sneak)t+=" · กระซิบ";
-    if(m.water||o.water)t+=" · ใต้น้ำ";
-    if(m.covered&&o.covered)t+=" · ในถ้ำ";
+    if(src!==o)t+=" · ผ่านลำโพงโทรศัพท์";
+    if(o&&o.sneak)t+=" · กระซิบ";
+    if(m.water||src.water)t+=" · ใต้น้ำ";
+    if(m.covered&&src.covered)t+=" · ในถ้ำ";
     if(p.state==="failed")t="เชื่อมต่อเสียงไม่ได้ (เครือข่ายอาจต้องใช้ TURN)";
     s.textContent=t;
   }

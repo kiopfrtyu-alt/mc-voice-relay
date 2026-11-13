@@ -1,7 +1,7 @@
 const http = require("http"), fs = require("fs"), path = require("path"), crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-const RELAY_VER = "2026-11-13.1";
+const RELAY_VER = "2026-11-13.2";
 const PORT = process.env.PORT || 3000;
 // ตั้ง RELAY_SECRET ในตัวแปรสภาพแวดล้อมของโฮสต์ (แนะนำ) ถ้าไม่ตั้ง รีเลย์จะใช้รหัสของคนที่ส่งมาก่อนในแต่ละห้อง
 const ENV_SECRET = process.env.RELAY_SECRET || "";
@@ -11,7 +11,7 @@ const rooms = new Map();
 const ipFails = new Map();
 setInterval(() => { const n = Date.now(); for (const [k, v] of ipFails) if (n - v.t > 60000) ipFails.delete(k); }, 60000);
 const mkRoom = (id) => {
-  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), codesReady: false, settings: new Map(), errs: [], addonVer: null, admins: new Set(), pub: new Set(), clients: new Map(), fails: new Map(), updated: 0 });
+  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), codesReady: false, settings: new Map(), errs: [], calls: {}, addonVer: null, admins: new Set(), pub: new Set(), clients: new Map(), fails: new Map(), updated: 0 });
   return rooms.get(id);
 };
 const sendRaw = (ws, s) => ws.readyState === 1 && ws.send(s);
@@ -63,6 +63,12 @@ const server = http.createServer((req, res) => {
         if (typeof d.addonVer === "string") r.addonVer = d.addonVer.slice(0, 24);
         // รายชื่อผู้มีสิทธิ์ประกาศทั่วโลก (OP/แท็ก) ที่แอดออนตัดสินให้ ไม่เชื่อค่าจากฝั่งแอป
         if (Array.isArray(d.admins)) r.admins = new Set(d.admins.slice(0, 200).filter((n) => typeof n === "string" && n.length <= 32));
+        // สายโทรศัพท์ที่กำลังคุยกัน [[a,b],...] (แอดออนเป็นผู้ตัดสิน) เก็บเป็นแผนที่สองทาง
+        if (Array.isArray(d.calls)) {
+          const m = Object.create(null);
+          for (const c of d.calls.slice(0, 100)) if (Array.isArray(c) && typeof c[0] === "string" && typeof c[1] === "string" && c[0] !== c[1]) { m[c[0]] = c[1]; m[c[1]] = c[0]; }
+          r.calls = m;
+        }
         // คำสั่งจากในเกม (ไอเทม/เมนู) ส่งต่อให้แอปของผู้เล่นคนนั้น: mute | range | speak | vol | pub
         if (Array.isArray(d.cmds)) {
           for (const c of d.cmds.slice(0, 50)) {
@@ -174,7 +180,7 @@ setInterval(() => {
     for (const n of [...r.pub]) if (!r.admins.has(n) || !r.clients.has(n)) r.pub.delete(n); // หมดสิทธิ์/หลุด = เลิกประกาศ
     const speak = {}, pub = {};
     for (const n of r.clients.keys()) { const st = r.settings.get(n); if (st) speak[n] = st.speak; if (r.pub.has(n)) pub[n] = true; }
-    const s = JSON.stringify({ t: "state", players: r.players, fresh: Date.now() - r.updated < 5000, speak, pub });
+    const s = JSON.stringify({ t: "state", players: r.players, fresh: Date.now() - r.updated < 5000, speak, pub, calls: r.calls });
     for (const [n, c] of r.clients) {
       sendRaw(c, s);
       const me = JSON.stringify({ t: "me", admin: r.admins.has(n), pub: r.pub.has(n) });
