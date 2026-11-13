@@ -1,6 +1,7 @@
 const http = require("http"), fs = require("fs"), path = require("path"), crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
+const RELAY_VER = "2026-11-13.1";
 const PORT = process.env.PORT || 3000;
 // ตั้ง RELAY_SECRET ในตัวแปรสภาพแวดล้อมของโฮสต์ (แนะนำ) ถ้าไม่ตั้ง รีเลย์จะใช้รหัสของคนที่ส่งมาก่อนในแต่ละห้อง
 const ENV_SECRET = process.env.RELAY_SECRET || "";
@@ -10,7 +11,7 @@ const rooms = new Map();
 const ipFails = new Map();
 setInterval(() => { const n = Date.now(); for (const [k, v] of ipFails) if (n - v.t > 60000) ipFails.delete(k); }, 60000);
 const mkRoom = (id) => {
-  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), codesReady: false, settings: new Map(), admins: new Set(), pub: new Set(), clients: new Map(), fails: new Map(), updated: 0 });
+  if (!rooms.has(id)) rooms.set(id, { secret: null, players: Object.create(null), codes: new Map(), codesReady: false, settings: new Map(), errs: [], addonVer: null, admins: new Set(), pub: new Set(), clients: new Map(), fails: new Map(), updated: 0 });
   return rooms.get(id);
 };
 const sendRaw = (ws, s) => ws.readyState === 1 && ws.send(s);
@@ -59,6 +60,7 @@ const server = http.createServer((req, res) => {
           r.codes = m; r.codesReady = true;
         }
         r.players = players; r.updated = Date.now();
+        if (typeof d.addonVer === "string") r.addonVer = d.addonVer.slice(0, 24);
         // รายชื่อผู้มีสิทธิ์ประกาศทั่วโลก (OP/แท็ก) ที่แอดออนตัดสินให้ ไม่เชื่อค่าจากฝั่งแอป
         if (Array.isArray(d.admins)) r.admins = new Set(d.admins.slice(0, 200).filter((n) => typeof n === "string" && n.length <= 32));
         // คำสั่งจากในเกม (ไอเทม/เมนู) ส่งต่อให้แอปของผู้เล่นคนนั้น: mute | range | speak | vol | pub
@@ -87,16 +89,24 @@ const server = http.createServer((req, res) => {
           const alive = st && st.beat ? (st.ok && Date.now() - st.beat < 9000) : true;
           const o = Object.assign({ muted: false, range: 32, speak: 32, vols: {} }, st, { pub: r.pub.has(n), admin: r.admins.has(n), alive });
           o.why = alive ? "" : (st && st.beat && Date.now() - st.beat >= 9000 ? "no-beat" : (st && st.why) || "");
-          delete o.ok; delete o.beat;
+          o.appVer = (st && st.ver) || null; o.tx = (st && st.tx) || null;
+          delete o.ok; delete o.beat; delete o.ver;
           settings[n] = o;
         }
-        res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ settings }));
+        // ข้อผิดพลาดที่แอปรายงานเข้ามา ส่งต่อให้แอดออนครั้งเดียวแล้วเคลียร์
+        const errors = r.errs.splice(0, 20);
+        res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ settings, ver: { relay: RELAY_VER, addon: r.addonVer }, errors }));
       } catch (e) { res.writeHead(400); res.end(); }
     });
     return;
   }
+  if (req.url.split("?")[0] === "/version") {
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ relay: RELAY_VER }));
+  }
   if (req.url.split("?")[0] === "/") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    // ไม่ให้เบราว์เซอร์/WebView จำหน้าเก่า (ไม่งั้นอัปเดตแล้วก็ยังเห็นรุ่นเก่า)
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     // รองรับทั้งไฟล์ index.html วางข้าง server.js และในโฟลเดอร์ public
     const flat = path.join(__dirname, "index.html");
     return fs.createReadStream(fs.existsSync(flat) ? flat : path.join(__dirname, "public", "index.html")).pipe(res);
@@ -138,7 +148,12 @@ wss.on("connection", (ws, req) => {
       else if (d.t === "set") {
         const vols = {};
         if (d.vols && typeof d.vols === "object") for (const [k, v] of Object.entries(d.vols).slice(0, 100)) if (isFinite(v)) vols[String(k).slice(0, 32)] = Math.max(0, Math.min(200, +v));
-        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols, ns: d.ns !== false, agc: d.agc !== false, gain: d.gain == null ? 100 : Math.max(0, Math.min(200, +d.gain || 0)), gate: Math.max(0, Math.min(100, +d.gate || 0)), spk: d.spk === true, mon: d.mon === true, ok: d.ok !== false, why: String(d.why || "").slice(0, 24), beat: Date.now() });
+        r.settings.set(name, { muted: d.muted === true, range: Math.max(8, Math.min(64, +d.range || 32)), speak: Math.max(2, Math.min(64, +d.speak || 32)), vols, ver: String(d.ver || "").slice(0, 24), tx: String(d.tx || "").slice(0, 8), ns: d.ns !== false, agc: d.agc !== false, gain: d.gain == null ? 100 : Math.max(0, Math.min(200, +d.gain || 0)), gate: Math.max(0, Math.min(100, +d.gate || 0)), spk: d.spk === true, mon: d.mon === true, ok: d.ok !== false, why: String(d.why || "").slice(0, 24), beat: Date.now() });
+      } else if (d.t === "err") {
+        // แอปรายงานข้อผิดพลาด/สิ่งที่ผิดปกติ: เก็บไว้ส่งต่อให้เกม และพิมพ์ลงบันทึกของโฮสต์ (Render > Logs)
+        const e = { name, k: String(d.k || "").slice(0, 12), m: String(d.m || "").slice(0, 160), t: Date.now() };
+        r.errs.push(e); if (r.errs.length > 50) r.errs.shift();
+        console.warn("[app-error] " + name + " " + e.k + ": " + e.m);
       } else if (d.t === "pub" && typeof d.value === "boolean") {
         // เปิด/ปิดไมค์ประกาศจากแอป: เฉพาะผู้มีสิทธิ์ (รายชื่อมาจากแอดออน)
         if (d.value && r.admins.has(name)) r.pub.add(name); else r.pub.delete(name);
@@ -168,4 +183,4 @@ setInterval(() => {
   }
 }, 250);
 
-server.listen(PORT, () => console.log("relay on :" + PORT));
+server.listen(PORT, () => console.log("relay " + RELAY_VER + " on :" + PORT));

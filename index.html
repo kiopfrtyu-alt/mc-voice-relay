@@ -87,6 +87,7 @@ b{font-weight:600}
   <button id="addbtn" class="primary">+ เพิ่มเซิร์ฟเวอร์</button>
   <button id="testbtn">🎧 ทดสอบ/ปรับไมค์</button>
   <button id="bubbletog" class="tg hide">ปุ่มลอยบนหน้าจอ: ปิด</button>
+  <div class="lab" id="verline" style="text-align:center;opacity:.55"></div>
   <div class="sec tip"><b>ใช้ในเกม</b>
     <div class="lab">ไอเทมไมค์: แตะ = เปิด/ปิดไมค์ · ย่อตัว (sneak) + แตะ = เมนูปรับเสียง<br>เมนูมี: ระยะที่คนอื่นได้ยินคุณ, เสียงรายคน และไมค์ประกาศทั่วโลก (เฉพาะ OP)</div>
   </div>
@@ -117,9 +118,9 @@ b{font-weight:600}
     <div class="lab">"ฟังเสียงตัวเอง" จะได้ยินเสียงของคุณกลับมาทันที เหมือนหน้าทดสอบไมค์ใน Discord ควรใส่หูฟัง ไม่งั้นเสียงจะหอน</div>
   </div>
   <div class="sec"><b>วินิจฉัยเสียง</b>
-    <button id="t-xtx" class="tg">ทดลอง: ส่งไมค์ตรง: ปิด</button>
+    <button id="t-xtx" class="tg">ทดลอง: บังคับส่งผ่านตัวปรับ (แบบรุ่นก่อนหน้า): ปิด</button>
     <button id="t-xrx" class="tg">ทดลอง: เล่นเสียงเพื่อนตรง: ปิด</button>
-    <div class="lab">ปุ่มทดลองสำหรับหาสาเหตุเสียงสะท้อน: เปิดทีละปุ่มตอนคุยกับเพื่อน แล้วดูว่าเสียงสะท้อนหายไหม (รีเฟรชแอปแล้วจะกลับเป็นปิด)</div>
+    <div class="lab">ค่าปกติแอปส่งเสียงไมค์ดิบตรง (เหมือนรุ่นแรก) จะผ่านตัวปรับเมื่อคุณตั้งความดังไมค์/ตัดเสียงเบา/โหมดลำโพง ปุ่มทดลองไว้เทียบเสียง: เปิดทีละปุ่มตอนคุยกับเพื่อน (รีเฟรชแอปแล้วกลับเป็นปิด)</div>
     <button id="t-dg">📋 แสดงผลวินิจฉัย</button>
     <button id="t-dgc">คัดลอกผล</button>
     <button id="t-dgx">ล้างบันทึก</button>
@@ -171,7 +172,18 @@ b{font-weight:600}
 </div>
 
 <script>
+const WEB_VER="2026-11-13.1";
 const $=id=>document.getElementById(id);
+/* รายงานข้อผิดพลาด: เก็บไว้ดูในหน้าวินิจฉัย และส่งให้รีเลย์ (ขึ้นแจ้งในเกม/บันทึกของ Render) */
+const ERRS=[];let errSent=0;
+function reportErr(k,m){
+  m=String(m==null?"":m).slice(0,160);
+  ERRS.push({t:Date.now(),k,m});if(ERRS.length>30)ERRS.shift();
+  try{if(typeof dgEv==="function")dgEv("ผิดพลาด "+k+": "+m)}catch(e){}
+  try{if(ws&&ws.readyState===1&&Date.now()-errSent>3000){errSent=Date.now();ws.send(JSON.stringify({t:"err",k,m}))}}catch(e){}
+}
+window.addEventListener("error",e=>reportErr("js",(e.message||"")+" @"+(e.lineno||"?")));
+window.addEventListener("unhandledrejection",e=>reportErr("promise",e.reason&&e.reason.message||e.reason));
 const ICE={iceServers:[{urls:"stun:stun.l.google.com:19302"}]};
 const WHISPER=0.3;
 let ac,ws,mic,me="",roomId="",codeVal="",state={},peers={},rows={},chain=Promise.resolve();
@@ -187,7 +199,7 @@ const qp=new URLSearchParams(location.search);let qRoom=(qp.get("room")||"").tri
 const INIT_ROOM=qRoom,INIT_SN=qSn;
 let VOLS=J("vols")||{};
 let SPEAK=Math.max(2,Math.min(64,+store.get("speak")||32)),GAIN=store.get("gain")!=null?+store.get("gain"):100,GATE=+store.get("gate")||0,NS=store.get("ns")!=="0",AGC=store.get("agc")!=="0",SPK=store.get("spk")==="1";
-let DIRECT_TX=false,DIRECT_RX=false,DUCK=1,duckHold=0;
+let FORCE_CHAIN=false,DIRECT_RX=false,DUCK=1,duckHold=0,TXMODE="-";
 $("speak").value=SPEAK;$("sp").textContent=SPEAK+" บล็อก";
 
 const status=(t,err)=>{$("st").textContent=t;$("st").className=err?"err":""};
@@ -241,6 +253,7 @@ function applyChain(){
   if(mc.gate)mc.gate.port.postMessage({t:GATE/100*0.15});
   mc.mon.gain.value=MON?1:0;
   mc.echo.gain.value=ECHO?1:0;
+  applyTx();
 }
 function applyMic(){
   const on=!muted&&(mode!=="ptt"||pttDown);
@@ -252,14 +265,17 @@ function applyMic(){
   $("ptt").classList.toggle("down",pttDown&&!muted);
   applyTx();
 }
-/* ทดลอง: ส่งเสียงไมค์ดิบตรงให้เพื่อน (ข้ามตัวปรับความดัง/ตัดเสียงเบา) */
+/* เลือกแทร็กที่ส่งให้เพื่อน: ปกติส่ง "เสียงไมค์ดิบ" ตรง ๆ (เหมือนแอปรุ่นแรก คุณภาพดีสุด ไม่ผ่านเธรด Web Audio)
+   จะส่งผ่านตัวปรับ (ความดังไมค์/ตัดเสียงเบา/โหมดลำโพง) ก็ต่อเมื่อผู้ใช้ตั้งค่าเหล่านั้นไว้ */
+const useRaw=()=>!FORCE_CHAIN&&GAIN===100&&GATE===0&&!SPK;
 function applyTx(){
   if(!mc||!mic)return;
   const raw=mic.getAudioTracks()[0],proc=mc.out.getAudioTracks()[0];if(!raw||!proc)return;
-  const w=DIRECT_TX?raw:proc;
+  const rawMode=useRaw(),w=rawMode?raw:proc;
   for(const n in peers){const pc=peers[n].pc;if(!pc)continue;
-    pc.getSenders().forEach(x=>{if(x.track&&x.track.kind==="audio"&&x.track!==w&&(x.track===raw||x.track===proc||x.track.readyState==="ended")){x.replaceTrack(w).catch(()=>{})}})}
-  raw.enabled=DIRECT_TX?(!muted&&(mode!=="ptt"||pttDown)):true;
+    pc.getSenders().forEach(x=>{if(x.track&&x.track.kind==="audio"&&x.track!==w&&(x.track===raw||x.track===proc||x.track.readyState==="ended")){x.replaceTrack(w).catch(e=>reportErr("tx","replaceTrack: "+(e&&e.message)))}})}
+  raw.enabled=rawMode?(!muted&&(mode!=="ptt"||pttDown)):true;
+  if(TXMODE!==(rawMode?"raw":"chain")){TXMODE=rawMode?"raw":"chain";if(typeof dgEv==="function")dgEv("ส่งเสียงแบบ "+TXMODE)}
 }
 /* ทดลอง: เล่นเสียงเพื่อนตรง ๆ ผ่าน <audio> ความดังตามระยะอย่างเดียว (ข้ามเสียงรอบทิศทาง) */
 function direct(n,p,g){
@@ -273,7 +289,7 @@ async function reacquire(){
     const s=await getMic();
     try{mic&&mic.getTracks().forEach(t=>t.stop())}catch(e){}
     mic=s;await ensureChain();$("note").textContent="";
-  }catch(e){$("note").textContent="เปิดไมค์ใหม่ไม่ได้ ตรวจสิทธิ์ไมค์ของเบราว์เซอร์"}
+  }catch(e){reportErr("mic","เปิดไมค์ใหม่ไม่ได้: "+(e&&e.name)+" "+(e&&e.message));$("note").textContent="เปิดไมค์ใหม่ไม่ได้ ตรวจสิทธิ์ไมค์ของเบราว์เซอร์"}
 }
 const micDead=()=>mic&&mic.getAudioTracks().every(t=>t.readyState==="ended");
 /* สลับตัดเสียงรบกวน/ปรับระดับอัตโนมัติ: ลองสั่งกับไมค์ที่เปิดอยู่ก่อน ถ้าเครื่องไม่รับก็เปิดไมค์ใหม่ */
@@ -299,7 +315,7 @@ addEventListener("blur",()=>ptt(false));
 /* ส่งการตั้งค่าปัจจุบันให้รีเลย์ (แอดออนในเกมอ่านไปแสดงในเมนู) */
 const setSpeak=v=>{SPEAK=Math.max(2,Math.min(64,Math.round(+v)||32));$("speak").value=SPEAK;$("sp").textContent=SPEAK+" บล็อก";store.set("speak",SPEAK)};
 $("speak").oninput=e=>{setSpeak(e.target.value);report()};
-function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,speak:SPEAK,vols:VOLS,ns:NS,agc:AGC,gain:GAIN,gate:GATE,spk:SPK,mon:MON,ok:aliveOk(),why:aliveWhy()}))}
+function report(){if(ws&&ws.readyState===1&&joined)ws.send(JSON.stringify({t:"set",muted,speak:SPEAK,vols:VOLS,ns:NS,agc:AGC,gain:GAIN,gate:GATE,spk:SPK,mon:MON,ver:WEB_VER,tx:TXMODE,ok:aliveOk(),why:aliveWhy()}))}
 const aliveWhy=()=>!ac?"no-ctx":ac.state!=="running"?"ctx-"+ac.state:!mic?"no-mic":micDead()?"mic-ended":"";
 const aliveOk=()=>aliveWhy()==="";
 let lastRe=0;
@@ -369,6 +385,7 @@ function dgSummary(){
   const pct=(a,p)=>{if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y);return b[Math.min(b.length-1,Math.floor(b.length*p))]};
   const r1=(x)=>Math.round(x*10)/10;
   out.push("เครื่อง: "+navigator.userAgent.replace(/^Mozilla\/5.0 /,"").slice(0,110));
+  out.push("รุ่นเว็บ "+WEB_VER+"  ส่งเสียงแบบ: "+TXMODE+(FORCE_CHAIN?" (บังคับ)":"")+"  เล่นเสียงเพื่อน: "+(DIRECT_RX?"ตรง":"รอบทิศทาง"));
   out.push("ข้อมูล "+L.length+" ครั้ง (~"+r1(L.length*2/60)+" นาที)");
   if(!L.length)return out.join("\n")+"\nยังไม่มีข้อมูล: เชื่อมห้องแล้วรอสัก 1 นาที";
   const last=L[L.length-1];
@@ -393,6 +410,7 @@ function dgSummary(){
     out.push("jitter เฉลี่ย "+r1(avg(jit))+" สูงสุด "+(jit.length?Math.max(...jit):"-")+" ms  บัฟเฟอร์ "+r1(avg(jb))+" ms");
     out.push("เสียงที่ระบบเดาแทน(สะดุด) "+r1(sum("dTot")?100*sum("dCon")/sum("dTot"):0)+"%  ยืด/บีบเสียง "+sum("dIns")+"/"+sum("dRem")+" ตัวอย่าง");
   }
+  if(ERRS.length){out.push("\n[ข้อผิดพลาดล่าสุด]");ERRS.slice(-8).forEach(e=>out.push(new Date(e.t).toLocaleTimeString("th-TH")+" "+e.k+": "+e.m))}
   if(DG.evs.length){out.push("\n[เหตุการณ์ล่าสุด]");DG.evs.slice(-12).forEach(e=>out.push(new Date(e.t).toLocaleTimeString("th-TH")+" "+e.e))}
   return out.join("\n");
 }
@@ -411,7 +429,7 @@ const setAGC=async v=>{AGC=!!v;store.set("agc",AGC?"1":"0");syncTest();await ref
 const setGain=v=>{GAIN=Math.max(0,Math.min(200,Math.round(+v||0)));store.set("gain",GAIN);syncTest();applyChain()};
 const setGate=v=>{GATE=Math.max(0,Math.min(100,Math.round(+v||0)));store.set("gate",GATE);syncTest();applyChain()};
 const setMon=v=>{MON=!!v;applyChain();syncTest()};
-const setSpk=v=>{SPK=!!v;store.set("spk",SPK?"1":"0");if(!SPK&&DUCK!==1&&mc){DUCK=1;mc.gain.gain.setTargetAtTime(GAIN/100,ac.currentTime,0.05)}syncTest()};
+const setSpk=v=>{SPK=!!v;store.set("spk",SPK?"1":"0");if(!SPK&&DUCK!==1&&mc){DUCK=1;mc.gain.gain.setTargetAtTime(GAIN/100,ac.currentTime,0.05)}syncTest();applyTx();applyMic()};
 /* คำสั่งจากในเกม (ไอเทม/เมนู) */
 function onCmd(d){
   if(d.op==="ns")setNS(d.value===true);
@@ -430,6 +448,7 @@ function onCmd(d){
     const p=peers[d.target];if(p&&p.vol)p.vol.gain.value=VOLS[d.target]/100;
     const li=rows[d.target];if(li)li.querySelector("input").value=VOLS[d.target];
   }
+  else reportErr("cmd","ไม่รู้จักคำสั่งจากเกม: "+d.op);
   report();
 }
 
@@ -454,10 +473,11 @@ function build(n,p,stream){
 function connect(n,init){
   if(peers[n])return peers[n];
   const pc=new RTCPeerConnection(ICE),p={pc,q:[],state:"new"};peers[n]=p;
-  mc.out.getAudioTracks().forEach(t=>pc.addTrack(t,mc.out));
+  {const raw=mic&&mic.getAudioTracks()[0];
+   if(useRaw()&&raw)pc.addTrack(raw,mic);else mc.out.getAudioTracks().forEach(t=>pc.addTrack(t,mc.out))}
   pc.onicecandidate=e=>e.candidate&&tx(n,{c:e.candidate});
   pc.ontrack=e=>{if(!p.pan)build(n,p,e.streams[0])};
-  pc.onconnectionstatechange=()=>{p.state=pc.connectionState};
+  pc.onconnectionstatechange=()=>{p.state=pc.connectionState;if(p.state==="failed")reportErr("rtc","เชื่อมเสียงกับ "+n+" ไม่สำเร็จ (เครือข่าย/ไฟร์วอลล์)");dgEv("เชื่อมกับ "+n+": "+p.state)};
   if(init)pc.onnegotiationneeded=async()=>{await pc.setLocalDescription(await pc.createOffer());tx(n,{d:pc.localDescription})};
   return p;
 }
@@ -581,7 +601,7 @@ function keepAlive(){
 async function prep(){
   try{if(!ac){ac=new AudioContext();keepAlive()}}catch(e){}
   try{if(ac&&ac.state!=="running")await tmo(ac.resume(),2500)}catch(e){}
-  try{if(!mic||mic.getAudioTracks().every(t=>t.readyState==="ended"))mic=await tmo(getMic(),8000)}catch(e){}
+  try{if(!mic||mic.getAudioTracks().every(t=>t.readyState==="ended"))mic=await tmo(getMic(),8000)}catch(e){reportErr("mic","เปิดไมค์ไม่ได้: "+(e&&e.name)+" "+(e&&e.message))}
 }
 window.mcPrep=prep;
 ["pointerdown","touchstart","keydown"].forEach(ev=>document.addEventListener(ev,()=>{if(!ac||ac.state!=="running"||!mic)prep()},{passive:true}));
@@ -671,7 +691,7 @@ function syncTest(){
   $("t-gain").value=GAIN;$("t-gv").textContent=GAIN+"%";
   $("t-gate").value=GATE;$("t-tv").textContent=GATE?GATE+"":"ปิด";$("tthr").style.left=Math.min(100,GATE*0.6)+"%";
   $("t-nogate").classList.toggle("hide",!mc||!!mc.gate);
-  tgSet("t-ns",NS,"ตัดเสียงรบกวน");tgSet("t-agc",AGC,"ปรับระดับเสียงอัตโนมัติ");tgSet("t-mon",MON,"ฟังเสียงตัวเอง");tgSet("t-echo",ECHO,"ฟังเสียงสะท้อนหน่วง 1.2 วิ (30 วิ)");tgSet("t-spk",SPK,"โหมดลำโพง (ลดไมค์ตอนได้ยินเพื่อน)");tgSet("t-xtx",DIRECT_TX,"ทดลอง: ส่งไมค์ตรง");tgSet("t-xrx",DIRECT_RX,"ทดลอง: เล่นเสียงเพื่อนตรง");
+  tgSet("t-ns",NS,"ตัดเสียงรบกวน");tgSet("t-agc",AGC,"ปรับระดับเสียงอัตโนมัติ");tgSet("t-mon",MON,"ฟังเสียงตัวเอง");tgSet("t-echo",ECHO,"ฟังเสียงสะท้อนหน่วง 1.2 วิ (30 วิ)");tgSet("t-spk",SPK,"โหมดลำโพง (ลดไมค์ตอนได้ยินเพื่อน)");tgSet("t-xtx",FORCE_CHAIN,"ทดลอง: บังคับส่งผ่านตัวปรับ (แบบรุ่นก่อนหน้า)");tgSet("t-xrx",DIRECT_RX,"ทดลอง: เล่นเสียงเพื่อนตรง");
 }
 async function openTest(from){
   prevView=from;show("v-test");syncTest();status("กำลังเปิดไมค์...");
@@ -691,7 +711,7 @@ $("t-ns").onclick=()=>setNS(!NS);
 $("t-agc").onclick=()=>setAGC(!AGC);
 $("t-mon").onclick=()=>setMon(!MON);
 $("t-spk").onclick=()=>setSpk(!SPK);
-$("t-xtx").onclick=()=>{DIRECT_TX=!DIRECT_TX;applyTx();applyMic();syncTest()};
+$("t-xtx").onclick=()=>{FORCE_CHAIN=!FORCE_CHAIN;applyTx();applyMic();syncTest()};
 $("t-xrx").onclick=()=>{DIRECT_RX=!DIRECT_RX;syncTest();if(typeof update==="function")update()};
 $("t-echo").onclick=()=>setEcho(!ECHO);
 $("t-beep").onclick=()=>beep();
@@ -701,6 +721,7 @@ $("t-dgx").onclick=()=>{DG.log.length=0;DG.evs.length=0;DG.prev={};$("dg-out").t
 $("pubbtn").onclick=()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:"pub",value:!ME.pub}))};
 $("bubbletog").onclick=()=>{if(!AB)return;try{AB.setEnabled(!AB.isEnabled())}catch(e){}renderBubble()};
 renderBubble();
+$("verline").textContent="รุ่นเว็บ "+WEB_VER;
 route();
 document.addEventListener("visibilitychange",()=>{
   renderBubble();
