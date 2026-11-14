@@ -348,7 +348,14 @@ function renderBubble(){
   b.textContent="ปุ่มลอยบนหน้าจอ: "+(on?"เปิด":"ปิด");b.className=on?"tg on":"tg";
 }
 /* ===== วินิจฉัยเสียง: เก็บสถิติทุก 2 วินาที (ทำงานต่อแม้อยู่ในเกม) แล้วสรุปให้ดูในหน้าทดสอบ ===== */
-const DG={log:[],prev:{},evs:[],lastTick:0};
+const DG={log:[],prev:{},evs:[],lastTick:0,acc:{},mx:{in:{},out:0,clip:0},t0:Date.now()};
+let mAn=null; // วัดเสียงรวมที่ออกลำโพง (ไม่มีผลต่อเสียง)
+// ยอดคลื่นสูงสุด 0..1 และจำนวนตัวอย่างที่ชนเพดาน (เสียงแตก)
+function peakOf(an){const b=new Uint8Array(an.fftSize);an.getByteTimeDomainData(b);let m=0,c=0;for(const v of b){const x=Math.abs(v-128)/128;if(x>m)m=x;if(v<=1||v>=254)c++}return {m,c}}
+function dgPeaks(){
+  try{for(const n in peers){const p=peers[n];if(p.an){const r=peakOf(p.an);if(r.m>(DG.mx.in[n]||0))DG.mx.in[n]=r.m}}
+  if(mAn){const r=peakOf(mAn);if(r.m>DG.mx.out)DG.mx.out=r.m;DG.mx.clip+=r.c}}catch(e){}
+}
 const dgEv=(e)=>{DG.evs.push({t:Date.now(),e});if(DG.evs.length>100)DG.evs.shift()};
 document.addEventListener("visibilitychange",()=>dgEv("หน้าเว็บ "+document.visibilityState));
 async function dgSample(lag){
@@ -362,6 +369,7 @@ async function dgSample(lag){
         if(r.type==="inbound-rtp"&&r.kind==="audio"){
           cur.rec=r.packetsReceived||0;cur.lost=r.packetsLost||0;cur.con=r.concealedSamples||0;cur.tot=r.totalSamplesReceived||0;
           cur.ins=r.insertedSamplesForDeceleration||0;cur.rem=r.removedSamplesForAcceleration||0;
+          if(r.audioLevel!=null)o.lvl=r.audioLevel;
           if(r.jitter!=null)o.jit=Math.round(r.jitter*1000);
           if(r.jitterBufferEmittedCount)o.jb=Math.round(1000*(r.jitterBufferDelay||0)/r.jitterBufferEmittedCount);
         }else if(r.type==="candidate-pair"&&r.currentRoundTripTime!=null&&(r.nominated||r.state==="succeeded")){pair=r}
@@ -375,15 +383,23 @@ async function dgSample(lag){
       const d=(k)=>pr?Math.max(0,(cur[k]||0)-(pr[k]||0)):0;
       o.dLost=d("lost");o.dRec=d("rec");o.dCon=d("con");o.dTot=d("tot");o.dIns=d("ins");o.dRem=d("rem");
       DG.prev[n]=cur;s.peers[n]=o;
+      const A=DG.acc[n]=DG.acc[n]||{n:0,first:Date.now(),last:0,lost:0,rec:0,con:0,tot:0,ins:0,rem:0,jitS:0,jitN:0,jitM:0,rttS:0,rttN:0,rttM:0,jbS:0,jbN:0,lvS:0,lvN:0,lvM:0,pkM:0,path:""};
+      A.n++;A.last=Date.now();A.lost+=o.dLost;A.rec+=o.dRec;A.con+=o.dCon;A.tot+=o.dTot;A.ins+=o.dIns;A.rem+=o.dRem;if(o.path)A.path=o.path;
+      if(o.jit!=null){A.jitS+=o.jit;A.jitN++;A.jitM=Math.max(A.jitM,o.jit)}
+      if(o.rtt!=null){A.rttS+=o.rtt;A.rttN++;A.rttM=Math.max(A.rttM,o.rtt)}
+      if(o.jb!=null){A.jbS+=o.jb;A.jbN++}
+      if(o.lvl!=null){A.lvS+=o.lvl;A.lvN++;A.lvM=Math.max(A.lvM,o.lvl)}
+      A.pkM=Math.max(A.pkM,DG.mx.in[n]||0);
     }catch(e){}
   }
+  s.outPk=DG.mx.out;s.clip=DG.mx.clip;DG.mx={in:{},out:0,clip:0};
   DG.log.push(s);if(DG.log.length>200)DG.log.shift();
 }
 function dgSummary(){
   const L=DG.log,out=[];
   const avg=(a)=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
   const pct=(a,p)=>{if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y);return b[Math.min(b.length-1,Math.floor(b.length*p))]};
-  const r1=(x)=>Math.round(x*10)/10;
+  const r1=(x)=>Math.round(x*10)/10,r2=(x)=>Math.round(x*100)/100;
   out.push("เครื่อง: "+navigator.userAgent.replace(/^Mozilla\/5.0 /,"").slice(0,110));
   out.push("รุ่นเว็บ "+WEB_VER+"  ส่งเสียงแบบ: "+TXMODE+(FORCE_CHAIN?" (บังคับ)":"")+"  เล่นเสียงเพื่อน: "+(DIRECT_RX?"ตรง":"รอบทิศทาง"));
   out.push("ข้อมูล "+L.length+" ครั้ง (~"+r1(L.length*2/60)+" นาที)");
@@ -400,16 +416,19 @@ function dgSummary(){
   out.push("หน้าเว็บถูกซ่อน: "+hid+" จาก "+L.length+" ครั้ง");
   const lags=L.map(x=>x.lag);
   out.push("\n[ตัวเครื่องหน่วง] (เวลาที่หน้าเว็บตอบสนองช้า ms)\nเฉลี่ย "+r1(avg(lags))+"  p95 "+pct(lags,0.95)+"  สูงสุด "+Math.max(...lags)+"  ช้าเกิน 300ms: "+lags.filter(x=>x>300).length+" ครั้ง, เกิน 1000ms: "+lags.filter(x=>x>1000).length+" ครั้ง");
-  for(const n of Object.keys(last.peers)){
-    const ps=L.map(x=>x.peers[n]).filter(Boolean);if(!ps.length)continue;
-    const sum=(k)=>ps.reduce((x,y)=>x+(y[k]||0),0);
-    const jit=ps.filter(x=>x.jit!=null).map(x=>x.jit),rtt=ps.filter(x=>x.rtt!=null).map(x=>x.rtt),jb=ps.filter(x=>x.jb!=null).map(x=>x.jb);
-    const tot=sum("dRec")+sum("dLost");
-    out.push("\n[เพื่อน: "+n+"] เส้นทาง "+(last.peers[n].path||"?"));
-    out.push("แพ็กเก็ตหาย "+sum("dLost")+"/"+tot+" ("+r1(tot?100*sum("dLost")/tot:0)+"%)  RTT เฉลี่ย "+r1(avg(rtt))+" สูงสุด "+(rtt.length?Math.max(...rtt):"-")+" ms");
-    out.push("jitter เฉลี่ย "+r1(avg(jit))+" สูงสุด "+(jit.length?Math.max(...jit):"-")+" ms  บัฟเฟอร์ "+r1(avg(jb))+" ms");
-    out.push("เสียงที่ระบบเดาแทน(สะดุด) "+r1(sum("dTot")?100*sum("dCon")/sum("dTot"):0)+"%  ยืด/บีบเสียง "+sum("dIns")+"/"+sum("dRem")+" ตัวอย่าง");
+  // สถิติเพื่อนสะสมตลอดการใช้งาน (ไม่หายแม้เพื่อนออกไปแล้ว)
+  const ak=Object.keys(DG.acc);
+  if(!ak.length)out.push("\n[เพื่อน] ยังไม่เคยมีเพื่อนเชื่อมต่อเสียงในรอบนี้");
+  for(const n of ak){
+    const A=DG.acc[n],tm=(t)=>new Date(t).toLocaleTimeString("th-TH"),tot=A.rec+A.lost;
+    out.push("\n[เพื่อน: "+n+"] เส้นทาง "+(A.path||"?")+"  ข้อมูล "+A.n+" ครั้ง ("+tm(A.first)+"-"+tm(A.last)+")"+(peers[n]?"":" · ตอนนี้ไม่ได้เชื่อม"));
+    out.push("แพ็กเก็ตหาย "+A.lost+"/"+tot+" ("+r1(tot?100*A.lost/tot:0)+"%)  RTT เฉลี่ย "+r1(A.rttN?A.rttS/A.rttN:0)+" สูงสุด "+A.rttM+" ms");
+    out.push("jitter เฉลี่ย "+r1(A.jitN?A.jitS/A.jitN:0)+" สูงสุด "+A.jitM+" ms  บัฟเฟอร์ "+r1(A.jbN?A.jbS/A.jbN:0)+" ms");
+    out.push("เสียงที่ระบบเดาแทน(สะดุด) "+r1(A.tot?100*A.con/A.tot:0)+"%  ยืด/บีบเสียง "+A.ins+"/"+A.rem+" ตัวอย่าง");
+    out.push("เสียงที่ได้รับจากเพื่อน (ก่อนปรับ): ยอดคลื่นสูงสุด "+r2(A.pkM)+" (1.0 = เต็มสเกล)"+(A.lvN?"  ระดับเฉลี่ย "+r2(A.lvS/A.lvN)+" สูงสุด "+r2(A.lvM):""));
   }
+  const outPk=L.map(x=>x.outPk||0),clips=L.reduce((x,y)=>x+(y.clip||0),0);
+  out.push("\n[ลำโพงรวม] ยอดคลื่นสูงสุด "+r2(Math.max(0,...outPk))+" (1.0 = เต็มสเกล)  ตัวอย่างที่ชนเพดาน(เสียงแตก) "+clips);
   if(ERRS.length){out.push("\n[ข้อผิดพลาดล่าสุด]");ERRS.slice(-8).forEach(e=>out.push(new Date(e.t).toLocaleTimeString("th-TH")+" "+e.k+": "+e.m))}
   if(DG.evs.length){out.push("\n[เหตุการณ์ล่าสุด]");DG.evs.slice(-12).forEach(e=>out.push(new Date(e.t).toLocaleTimeString("th-TH")+" "+e.e))}
   return out.join("\n");
@@ -461,8 +480,8 @@ function build(n,p,stream){
   lp.type="lowpass";lp.frequency.value=20000;
   pan.panningModel="HRTF";pan.distanceModel="linear";pan.refDistance=1;pan.maxDistance=32;pan.rolloffFactor=1;
   rv.buffer=impulse();wet.gain.value=0;dry.gain.value=0;
-  src.connect(an);src.connect(lp);lp.connect(vol);vol.connect(pan);pan.connect(dry);pan.connect(rv);rv.connect(wet);dry.connect(ac.destination);wet.connect(ac.destination);
-  Object.assign(p,{lp,vol,pan,dry,wet,an,audio:a});
+  src.connect(an);src.connect(lp);lp.connect(vol);vol.connect(pan);pan.connect(dry);pan.connect(rv);rv.connect(wet);dry.connect(ac.destination);wet.connect(ac.destination);if(!mAn){mAn=ac.createAnalyser();mAn.fftSize=1024}dry.connect(mAn);wet.connect(mAn);
+  Object.assign(p,{src,rv,lp,vol,pan,dry,wet,an,audio:a});
   const li=document.createElement("li");
   li.innerHTML='<div class="row"><span class="nm"></span><span class="s"></span></div><input type="range" min="0" max="200" value="100" title="ระดับเสียงของคนนี้">';
   li.querySelector(".nm").textContent=n;
@@ -495,7 +514,9 @@ async function onSignal(from,s){
 function drop(n){
   const p=peers[n];if(!p)return;
   try{p.pc.close()}catch(e){}
-  if(p.audio){p.audio.srcObject=null}
+  // ถอดโหนดเสียงของคนนี้ออกจากระบบเสียงให้หมด (เดิมค้างอยู่ทุกครั้งที่เพื่อนหลุด/เข้าใหม่ แล้วสะสมจนเครื่องหนัก)
+  for(const k of ["src","lp","vol","pan","dry","wet","rv","an"]){try{p[k]&&p[k].disconnect()}catch(e){}}
+  if(p.audio){try{p.audio.pause()}catch(e){}p.audio.srcObject=null}
   delete peers[n];
   if(rows[n]){rows[n].remove();delete rows[n]}
   $("empty").classList.toggle("hide",!!$("ls").children.length);
@@ -550,6 +571,7 @@ function update(){
 setInterval(()=>{
   if(mc&&!$("v-test").classList.contains("hide")){$("tlvl").style.width=Math.min(100,rms(mc.an)*400)+"%"}
   if(!joined)return;
+  dgPeaks();
   if(mc){const w=Math.min(100,rms(mc.an)*400)+"%";$("lvl").style.width=w;$("tlvl").style.width=w}
   let heard=false;
   for(const n in peers){const p=peers[n],li=rows[n];if(p.an&&li){const t=rms(p.an)>0.02;li.classList.toggle("talk",t);if(t&&(DIRECT_RX?p.audio.volume>0.05:p.dry.gain.value>0.05))heard=true}}
@@ -727,7 +749,7 @@ $("t-echo").onclick=()=>setEcho(!ECHO);
 $("t-beep").onclick=()=>beep();
 $("t-dg").onclick=()=>{$("dg-out").textContent=dgSummary()};
 $("t-dgc").onclick=async()=>{const t=dgSummary();$("dg-out").textContent=t;try{await navigator.clipboard.writeText(t);status("คัดลอกแล้ว")}catch(e){const r=document.createRange();r.selectNodeContents($("dg-out"));const sl=getSelection();sl.removeAllRanges();sl.addRange(r);status("กดค้างที่ข้อความเพื่อคัดลอก")}};
-$("t-dgx").onclick=()=>{DG.log.length=0;DG.evs.length=0;DG.prev={};$("dg-out").textContent="ล้างแล้ว"};
+$("t-dgx").onclick=()=>{DG.log.length=0;DG.evs.length=0;DG.prev={};DG.acc={};$("dg-out").textContent="ล้างแล้ว"};
 $("pubbtn").onclick=()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:"pub",value:!ME.pub}))};
 $("bubbletog").onclick=()=>{if(!AB)return;try{AB.setEnabled(!AB.isEnabled())}catch(e){}renderBubble()};
 renderBubble();
