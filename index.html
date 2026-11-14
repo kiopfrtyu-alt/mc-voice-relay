@@ -118,6 +118,8 @@ b{font-weight:600}
     <div class="lab">"ฟังเสียงตัวเอง" จะได้ยินเสียงของคุณกลับมาทันที เหมือนหน้าทดสอบไมค์ใน Discord ควรใส่หูฟัง ไม่งั้นเสียงจะหอน</div>
   </div>
   <div class="sec"><b>วินิจฉัยเสียง</b>
+    <button id="t-reset">↩ กลับค่าเริ่มต้น (แบบแอปแรก)</button>
+    <button id="t-lim" class="tg on">ลิมิตเตอร์กันเสียงแตก: เปิด</button>
     <button id="t-xtx" class="tg">ทดลอง: บังคับส่งผ่านตัวปรับ (แบบรุ่นก่อนหน้า): ปิด</button>
     <button id="t-xrx" class="tg">ทดลอง: เล่นเสียงเพื่อนตรง: ปิด</button>
     <div class="lab">ค่าปกติแอปส่งเสียงไมค์ดิบตรง (เหมือนรุ่นแรก) จะผ่านตัวปรับเมื่อคุณตั้งความดังไมค์/ตัดเสียงเบา/โหมดลำโพง ปุ่มทดลองไว้เทียบเสียง: เปิดทีละปุ่มตอนคุยกับเพื่อน (รีเฟรชแอปแล้วกลับเป็นปิด)</div>
@@ -327,7 +329,7 @@ function beep(){
     for(let i=0;i<3;i++){
       const o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.value=i===2?1175:880;
       const t=t0+i*0.35;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.35,t+0.02);g.gain.linearRampToValueAtTime(0,t+0.25);
-      o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+0.3);
+      o.connect(g);g.connect(outBus());o.start(t);o.stop(t+0.3);
     }
   }catch(e){}
 }
@@ -350,6 +352,20 @@ function renderBubble(){
 /* ===== วินิจฉัยเสียง: เก็บสถิติทุก 2 วินาที (ทำงานต่อแม้อยู่ในเกม) แล้วสรุปให้ดูในหน้าทดสอบ ===== */
 const DG={log:[],prev:{},evs:[],lastTick:0,acc:{},mx:{in:{},out:0,clip:0},t0:Date.now()};
 let mAn=null; // วัดเสียงรวมที่ออกลำโพง (ไม่มีผลต่อเสียง)
+// ลิมิตเตอร์กันเสียงแตก: จับเฉพาะยอดคลื่นที่ใกล้เต็มสเกล (-3 dB ขึ้นไป) เสียงพูดปกติไม่ถูกแตะ
+let LIM=store.get("lim")!=="0",bus=null,limN=null,fin=null;
+function routeLim(){
+  if(!bus)return;
+  try{bus.disconnect()}catch(e){}try{limN.disconnect()}catch(e){}
+  if(LIM){bus.connect(limN);limN.connect(fin)}else bus.connect(fin);
+}
+function outBus(){
+  if(bus&&bus.context===ac)return bus;
+  bus=ac.createGain();limN=ac.createDynamicsCompressor();fin=ac.createGain();
+  limN.threshold.value=-3;limN.knee.value=0;limN.ratio.value=20;limN.attack.value=0.002;limN.release.value=0.12;
+  fin.connect(ac.destination);mAn=ac.createAnalyser();mAn.fftSize=1024;fin.connect(mAn);
+  routeLim();return bus;
+}
 // ยอดคลื่นสูงสุด 0..1 และจำนวนตัวอย่างที่ชนเพดาน (เสียงแตก)
 function peakOf(an){const b=new Uint8Array(an.fftSize);an.getByteTimeDomainData(b);let m=0,c=0;for(const v of b){const x=Math.abs(v-128)/128;if(x>m)m=x;if(v<=1||v>=254)c++}return {m,c}}
 function dgPeaks(){
@@ -360,6 +376,7 @@ const dgEv=(e)=>{DG.evs.push({t:Date.now(),e});if(DG.evs.length>100)DG.evs.shift
 document.addEventListener("visibilitychange",()=>dgEv("หน้าเว็บ "+document.visibilityState));
 async function dgSample(lag){
   const s={t:Date.now(),lag,vis:document.visibilityState,ac:ac?ac.state:"-",out:ac&&ac.outputLatency!=null?Math.round(ac.outputLatency*1000):null,base:ac?Math.round(ac.baseLatency*1000):null,peers:{}};
+  try{const ps=ac&&ac.playoutStats;if(ps){s.ue=ps.underrunEvents;s.ud=Math.round(ps.underrunDuration*1000);s.pt=Math.round(ps.totalDuration*1000)}}catch(e){}
   try{const tr=mic&&mic.getAudioTracks()[0];if(tr){const st=tr.getSettings();s.aec=st.echoCancellation;s.ns=st.noiseSuppression;s.agc=st.autoGainControl;s.trk=tr.readyState+(tr.muted?"+muted":"")}}catch(e){}
   for(const n in peers){
     const p=peers[n];if(!p.pc)continue;
@@ -401,8 +418,10 @@ function dgSummary(){
   const pct=(a,p)=>{if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y);return b[Math.min(b.length-1,Math.floor(b.length*p))]};
   const r1=(x)=>Math.round(x*10)/10,r2=(x)=>Math.round(x*100)/100;
   out.push("เครื่อง: "+navigator.userAgent.replace(/^Mozilla\/5.0 /,"").slice(0,110));
-  out.push("รุ่นเว็บ "+WEB_VER+"  ส่งเสียงแบบ: "+TXMODE+(FORCE_CHAIN?" (บังคับ)":"")+"  เล่นเสียงเพื่อน: "+(DIRECT_RX?"ตรง":"รอบทิศทาง"));
+  out.push("รุ่นเว็บ "+WEB_VER+"  ส่งเสียงแบบ: "+TXMODE+(FORCE_CHAIN?" (บังคับ)":"")+"  ลิมิตเตอร์: "+(LIM?"เปิด":"ปิด")+"  เล่นเสียงเพื่อน: "+(DIRECT_RX?"ตรง":"รอบทิศทาง"));
   out.push("ข้อมูล "+L.length+" ครั้ง (~"+r1(L.length*2/60)+" นาที)");
+  out.push("ค่าที่แอปจำไว้ (ต่างจากแอปแรกถ้าไม่ใช่ค่าเริ่มต้น): ความดังไมค์ "+GAIN+" (เริ่มต้น 100)  ตัดเสียงเบา "+GATE+" (0)  โหมดลำโพง "+(SPK?"เปิด":"ปิด")+" (ปิด)  ตัดรบกวน "+(NS?"เปิด":"ปิด")+"  AGC "+(AGC?"เปิด":"ปิด"));
+  const vk=Object.keys(VOLS);out.push("ความดังของเพื่อนแต่ละคนที่จำไว้ (เริ่มต้น 100): "+(vk.length?vk.map(k=>k+"="+VOLS[k]).join("  "):"ไม่มีที่ตั้งไว้"));
   if(!L.length)return out.join("\n")+"\nยังไม่มีข้อมูล: เชื่อมห้องแล้วรอสัก 1 นาที";
   const last=L[L.length-1];
   out.push("\n[ไมค์ ค่าจริงที่เครื่องรายงาน]\nตัดเสียงสะท้อน="+last.aec+"  ตัดรบกวน="+last.ns+"  AGC="+last.agc+"  แทร็ก="+last.trk);
@@ -412,6 +431,8 @@ function dgSummary(){
   out.push("\n[ระบบเสียง] สถานะ: "+Object.entries(acs).map(([k,v])=>k+"×"+v).join(", "));
   const outs=L.filter(x=>x.out!=null).map(x=>x.out);
   out.push("ความหน่วงขาออก(ms): เฉลี่ย "+r1(avg(outs))+" สูงสุด "+(outs.length?Math.max(...outs):"-")+"  base="+last.base);
+  if(last.ue!=null)out.push("ระบบเสียงของเครื่องสะดุดเอง (underrun): "+last.ue+" ครั้ง รวม "+last.ud+" ms จากเล่นมา "+Math.round(last.pt/1000)+" วินาที"+(last.ue>0?"  ← ถ้าเลขนี้เพิ่มตอนเสียงแตก/กระตุก แปลว่าเครื่องประมวลเสียงไม่ทัน":""));
+  else out.push("ระบบเสียงของเครื่องสะดุดเอง (underrun): เครื่องนี้ไม่รายงานค่านี้");
   const hid=L.filter(x=>x.vis!=="visible").length;
   out.push("หน้าเว็บถูกซ่อน: "+hid+" จาก "+L.length+" ครั้ง");
   const lags=L.map(x=>x.lag);
@@ -428,7 +449,7 @@ function dgSummary(){
     out.push("เสียงที่ได้รับจากเพื่อน (ก่อนปรับ): ยอดคลื่นสูงสุด "+r2(A.pkM)+" (1.0 = เต็มสเกล)"+(A.lvN?"  ระดับเฉลี่ย "+r2(A.lvS/A.lvN)+" สูงสุด "+r2(A.lvM):""));
   }
   const outPk=L.map(x=>x.outPk||0),clips=L.reduce((x,y)=>x+(y.clip||0),0);
-  out.push("\n[ลำโพงรวม] ยอดคลื่นสูงสุด "+r2(Math.max(0,...outPk))+" (1.0 = เต็มสเกล)  ตัวอย่างที่ชนเพดาน(เสียงแตก) "+clips);
+  out.push("\n[ลำโพงรวม] ยอดคลื่นสูงสุดหลังลิมิตเตอร์ "+r2(Math.max(0,...outPk))+" (1.0 = เต็มสเกล)  ตัวอย่างที่ชนเพดาน(เสียงแตก) "+clips);
   if(ERRS.length){out.push("\n[ข้อผิดพลาดล่าสุด]");ERRS.slice(-8).forEach(e=>out.push(new Date(e.t).toLocaleTimeString("th-TH")+" "+e.k+": "+e.m))}
   if(DG.evs.length){out.push("\n[เหตุการณ์ล่าสุด]");DG.evs.slice(-12).forEach(e=>out.push(new Date(e.t).toLocaleTimeString("th-TH")+" "+e.e))}
   return out.join("\n");
@@ -480,7 +501,7 @@ function build(n,p,stream){
   lp.type="lowpass";lp.frequency.value=20000;
   pan.panningModel="HRTF";pan.distanceModel="linear";pan.refDistance=1;pan.maxDistance=32;pan.rolloffFactor=1;
   rv.buffer=impulse();wet.gain.value=0;dry.gain.value=0;
-  src.connect(an);src.connect(lp);lp.connect(vol);vol.connect(pan);pan.connect(dry);pan.connect(rv);rv.connect(wet);dry.connect(ac.destination);wet.connect(ac.destination);if(!mAn){mAn=ac.createAnalyser();mAn.fftSize=1024}dry.connect(mAn);wet.connect(mAn);
+  src.connect(an);src.connect(lp);lp.connect(vol);vol.connect(pan);pan.connect(dry);pan.connect(rv);rv.connect(wet);{const B=outBus();dry.connect(B);wet.connect(B)}
   Object.assign(p,{src,rv,lp,vol,pan,dry,wet,an,audio:a});
   const li=document.createElement("li");
   li.innerHTML='<div class="row"><span class="nm"></span><span class="s"></span></div><input type="range" min="0" max="200" value="100" title="ระดับเสียงของคนนี้">';
@@ -723,7 +744,7 @@ function syncTest(){
   $("t-gain").value=GAIN;$("t-gv").textContent=GAIN+"%";
   $("t-gate").value=GATE;$("t-tv").textContent=GATE?GATE+"":"ปิด";$("tthr").style.left=Math.min(100,GATE*0.6)+"%";
   $("t-nogate").classList.toggle("hide",!mc||!!mc.gate);
-  tgSet("t-ns",NS,"ตัดเสียงรบกวน");tgSet("t-agc",AGC,"ปรับระดับเสียงอัตโนมัติ");tgSet("t-mon",MON,"ฟังเสียงตัวเอง");tgSet("t-echo",ECHO,"ฟังเสียงสะท้อนหน่วง 1.2 วิ (30 วิ)");tgSet("t-spk",SPK,"โหมดลำโพง (ลดไมค์ตอนได้ยินเพื่อน)");tgSet("t-xtx",FORCE_CHAIN,"ทดลอง: บังคับส่งผ่านตัวปรับ (แบบรุ่นก่อนหน้า)");tgSet("t-xrx",DIRECT_RX,"ทดลอง: เล่นเสียงเพื่อนตรง");
+  tgSet("t-ns",NS,"ตัดเสียงรบกวน");tgSet("t-agc",AGC,"ปรับระดับเสียงอัตโนมัติ");tgSet("t-mon",MON,"ฟังเสียงตัวเอง");tgSet("t-echo",ECHO,"ฟังเสียงสะท้อนหน่วง 1.2 วิ (30 วิ)");tgSet("t-spk",SPK,"โหมดลำโพง (ลดไมค์ตอนได้ยินเพื่อน)");tgSet("t-lim",LIM,"ลิมิตเตอร์กันเสียงแตก");tgSet("t-xtx",FORCE_CHAIN,"ทดลอง: บังคับส่งผ่านตัวปรับ (แบบรุ่นก่อนหน้า)");tgSet("t-xrx",DIRECT_RX,"ทดลอง: เล่นเสียงเพื่อนตรง");
 }
 async function openTest(from){
   prevView=from;show("v-test");syncTest();status("กำลังเปิดไมค์...");
@@ -744,6 +765,19 @@ $("t-agc").onclick=()=>setAGC(!AGC);
 $("t-mon").onclick=()=>setMon(!MON);
 $("t-spk").onclick=()=>setSpk(!SPK);
 $("t-xtx").onclick=()=>{FORCE_CHAIN=!FORCE_CHAIN;applyTx();applyMic();syncTest()};
+async function resetDefaults(){
+  // กลับเป็นค่าเริ่มต้นแบบแอปแรก: ส่งไมค์ดิบ ไม่ปรับความดังไมค์/ตัดเสียงเบา/โหมดลำโพง ความดังเพื่อนทุกคน 100
+  FORCE_CHAIN=false;DIRECT_RX=false;
+  VOLS={};store.set("vols","{}");
+  for(const n in peers){const p=peers[n];if(p.vol)p.vol.gain.value=1;const li=rows[n];if(li){const i=li.querySelector("input");if(i)i.value=100}}
+  if(!LIM){LIM=true;store.set("lim","1");routeLim()}
+  MON=false;setGain(100);setGate(0);setSpk(false);
+  await setNS(true);await setAGC(true);
+  applyTx();report();syncTest();if(typeof update==="function")update();
+  dgEv("รีเซ็ตเป็นค่าเริ่มต้น");$("dg-out").textContent="รีเซ็ตเป็นค่าเริ่มต้นแล้ว: ไมค์ 100 / ไม่ตัดเสียงเบา / ปิดโหมดลำโพง / ความดังเพื่อนทุกคน 100";
+}
+$("t-reset").onclick=resetDefaults;
+$("t-lim").onclick=()=>{LIM=!LIM;store.set("lim",LIM?"1":"0");routeLim();syncTest();dgEv("ลิมิตเตอร์ "+(LIM?"เปิด":"ปิด"))};
 $("t-xrx").onclick=()=>{DIRECT_RX=!DIRECT_RX;syncTest();if(typeof update==="function")update()};
 $("t-echo").onclick=()=>setEcho(!ECHO);
 $("t-beep").onclick=()=>beep();
