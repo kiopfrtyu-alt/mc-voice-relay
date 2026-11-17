@@ -110,6 +110,13 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify({ relay: RELAY_VER }));
   }
+  // หน้าเว็บรุ่นแรกสุด (ต้นแบบ) ไว้เทียบเสียงกับรุ่นปัจจุบัน: เปิด /classic
+  if (req.url.split("?")[0] === "/classic") {
+    const f = path.join(__dirname, "classic.html");
+    if (!fs.existsSync(f)) { res.writeHead(404); return res.end("ไม่พบ classic.html ให้อัปไว้ข้าง server.js"); }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    return fs.createReadStream(f).pipe(res);
+  }
   if (req.url.split("?")[0] === "/") {
     // ไม่ให้เบราว์เซอร์/WebView จำหน้าเก่า (ไม่งั้นอัปเดตแล้วก็ยังเห็นรุ่นเก่า)
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
