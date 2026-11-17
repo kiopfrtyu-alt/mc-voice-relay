@@ -40,6 +40,7 @@ button.primary:active{box-shadow:inset 0 2px 0 rgba(255,255,255,.35),inset 0 -3p
 #perm h2{text-align:center;margin:8px 0 4px}
 #perm .sub{text-align:center;color:var(--mut);margin:0 0 16px;font-size:14px}
 .pcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:2px solid var(--line);border-radius:14px;padding:14px;margin:0 0 10px;color:var(--fg);font:inherit}
+#pnext:disabled{opacity:.45}
 .pcard.ok{border-color:var(--ok2);background:var(--card2)}
 .pcard .pt{font-weight:600}.pcard .pd{font-size:13px;color:var(--mut)}
 .pcard .pi{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#26402f;font-size:18px}
@@ -890,8 +891,10 @@ function renderPerm(){
     const pt=b.querySelector(".pt");if(pt.textContent!==it.t)pt.textContent=it.t;
     const pd=b.querySelector(".pd");if(pd.textContent!==it.d)pd.textContent=it.d;
   });
-  $("pnext").textContent=st.mic&&st.overlay&&st.battery?"เสร็จแล้ว ไปต่อ":"ต่อไป";
-  $("pnote").textContent=st.mic?"":"ยังไม่ได้อนุญาตไมค์ แอปจะส่งเสียงไม่ได้";
+  const left=items.filter(x=>!x.ok).length;
+  $("pnext").disabled=left>0;
+  $("pnext").textContent=left?"ต่อไป (เหลืออีก "+left+" ข้อ)":"เสร็จแล้ว ไปต่อ";
+  $("pnote").textContent=left?"ต้องอนุญาตให้ครบทุกข้อก่อนถึงจะไปต่อได้":"";
 }
 function showPerm(on){
   $("perm").classList.toggle("hide",!on);
@@ -902,10 +905,11 @@ function maybePerm(){
   if(!hasPerm()){$("permbtn").classList.add("hide");return}
   $("permbtn").classList.remove("hide");
   const st=permStat();
-  if(!store.get("perm_seen")||(st&&!st.mic))showPerm(true);
+  const allOk=st&&st.mic&&st.overlay&&st.battery&&store.get("p_auto")==="1";
+  if(!allOk)showPerm(true);
 }
 $("permbtn").onclick=()=>showPerm(true);
-$("pnext").onclick=()=>{store.set("perm_seen","1");showPerm(false)};
+$("pnext").onclick=()=>{if($("pnext").disabled)return;store.set("perm_seen","1");showPerm(false)};
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!$("perm").classList.contains("hide"))renderPerm()});
 $("bubbletog").onclick=()=>{if(!AB)return;try{AB.setEnabled(!AB.isEnabled())}catch(e){}renderBubble()};
 renderBubble();maybePerm();
